@@ -1,25 +1,8 @@
 PKGS		 := $(shell go list ./... | grep -ve "vendor")
 CMD_PKGS := $(shell go list ./... | grep -ve "vendor" | grep "cmd")
-LIB_PKGS := $(shell go list ./... | grep -ve "vendor" | grep -ve "cmd")
 
 .PHONY: all
 all: install test
-
-.PHONY: autocomplete
-autocomplete:
-	go install $(LIB_PKGS)
-
-.PHONY: restore
-restore:
-	gvt restore
-
-.PHONY: protocgorums
-protocgorums:
-	go install github.com/relab/raftgorums/vendor/github.com/relab/gorums/cmd/protoc-gen-gorums
-
-.PHONY: proto
-proto: protocgorums
-	protoc -I vendor:. --gorums_out=plugins=grpc+gorums:. gorumspb/gorums.proto
 
 .PHONY: install
 install:
