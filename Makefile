@@ -15,11 +15,11 @@ restore:
 
 .PHONY: protocgorums
 protocgorums:
-	go install github.com/relab/gorums/cmd/protoc-gen-gorums
+	go install github.com/relab/raftgorums/vendor/github.com/relab/gorums/cmd/protoc-gen-gorums
 
 .PHONY: proto
 proto: protocgorums
-	protoc -I ../../../:. --gorums_out=plugins=grpc+gorums:. gorumspb/gorums.proto
+	protoc -I vendor:. --gorums_out=plugins=grpc+gorums:. gorumspb/gorums.proto
 
 .PHONY: install
 install:
