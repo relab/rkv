@@ -1,0 +1,50 @@
+hash: 6426906de2b6ba87371ebe0780727c69b3a8d6a87ca23338619d0141ddeee73a
+updated: 2017-01-30T13:28:47.433929935+01:00
+imports:
+- name: github.com/boltdb/bolt
+  version: a705895fdad108f053eae7ee011ed94a0541ee13
+- name: github.com/gogo/protobuf
+  version: 909568be09de550ed094403c2bf8a261b5bb730a
+  subpackages:
+  - gogoproto
+  - proto
+  - protoc-gen-gogo/descriptor
+- name: github.com/golang/protobuf
+  version: 8ee79997227bf9b34611aee7946ae64735e6fd93
+  subpackages:
+  - proto
+- name: github.com/relab/gorums
+  version: 0d7e2cef30684ce2954816ed046a39670cec9e6e
+  repo: git@github.com:relab/gorums-dev.git
+- name: github.com/relab/libraftgorums
+  version: 778769fa0a1bbe84d88d8bcf922842f30ae3f874
+  subpackages:
+  - raftpb
+- name: golang.org/x/net
+  version: 4971afdc2f162e82d185353533d3cf16188a9f4e
+  subpackages:
+  - context
+  - http2
+  - http2/hpack
+  - idna
+  - internal/timeseries
+  - lex/httplex
+  - trace
+- name: golang.org/x/sys
+  version: d75a52659825e75fff6158388dddc6a5b04f9ba5
+  subpackages:
+  - unix
+- name: google.golang.org/grpc
+  version: 708a7f9f3283aa2d4f6132d287d78683babe55c8
+  subpackages:
+  - codes
+  - credentials
+  - grpclog
+  - internal
+  - metadata
+  - naming
+  - peer
+  - stats
+  - tap
+  - transport
+testImports: []

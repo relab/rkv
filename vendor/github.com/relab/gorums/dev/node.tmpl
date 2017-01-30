@@ -1,0 +1,79 @@
+
+{{/* Remember to run 'make goldenanddev' after editing this file. */}}
+
+{{- if not .IgnoreImports}}
+package {{.PackageName}}
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"google.golang.org/grpc"
+)
+{{- end}}
+
+// Node encapsulates the state of a node on which a remote procedure call
+// can be made.
+type Node struct {
+	// Only assigned at creation.
+	id   uint32
+	self bool
+	addr string
+	conn *grpc.ClientConn
+
+
+{{range .Clients}}
+	{{.}} {{.}}
+{{end}}
+
+{{range .Services}}
+{{if .Multicast}}
+	{{.MethodName}}Client {{.ServName}}_{{.MethodName}}Client
+{{end}}
+{{end}}
+
+	sync.Mutex
+	lastErr error
+	latency time.Duration
+}
+
+func (n *Node) connect(opts ...grpc.DialOption) error {
+  	var err error
+	n.conn, err = grpc.Dial(n.addr, opts...)
+	if err != nil {
+		return fmt.Errorf("dialing node failed: %v", err)
+	}
+
+{{range .Clients}}
+	n.{{.}} = New{{.}}(n.conn)
+{{end}}
+
+{{range .Services}}
+{{if .Multicast}}
+  	n.{{.MethodName}}Client, err = n.{{.ServName}}Client.{{.MethodName}}(context.Background())
+  	if err != nil {
+  		return fmt.Errorf("stream creation failed: %v", err)
+  	}
+{{end}}
+{{end -}}
+
+	return nil
+}
+
+func (n *Node) close() error {
+	// TODO: Log error, mainly care about the connection error below.
+        // We should log this error, but we currently don't have access to the
+        // logger in the manager.
+{{- range .Services -}}
+{{if .Multicast}}
+	_, _ = n.{{.MethodName}}Client.CloseAndRecv()
+{{- end -}}
+{{end}}
+	
+	if err := n.conn.Close(); err != nil {
+                return fmt.Errorf("conn close error: %v", err)
+        }	
+	return nil
+}
