@@ -2,12 +2,12 @@
 
 ** Throughput
 
-  =throughput= measures a clusters throughput using the supplied arguments. The ip of the leader must be supplied with the =-leader= argument.
+  =raftgorums-throughput= measures a clusters throughput using the supplied arguments. The ip of the leader must be supplied with the =-leader= argument.
 Failover in the case of a new leader is not implemented, as this client is only used to measure throughput under a stable leader.
 
 *** Usage
 #+BEGIN_EXAMPLE
-Usage of throughput:
+Usage of raftgorums-throughput:
   -clients int
     	Number of clients (default 1)
   -leader string
@@ -22,8 +22,8 @@ Usage of throughput:
 *** Example
 After a cluster is started execute the following command and wait =2*time= seconds for the output.
 #+BEGIN_SRC shell
-throughput -leader LEADERIP:9200
+raftgorums-throughput -leader LEADERIP:9200
 #+END_SRC
 
 *** For starting a cluster to interact with:
-- [[https://github.com/relab/libraftgorums/tree/master/cmd/replica][Replica]]
+- [[https://github.com/relab/raftgorums/tree/master/cmd/raftgorums-server][raftgorums-server]]

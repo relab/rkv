@@ -28,7 +28,7 @@ source ~/.profile
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 
 # Get the source.
-go get github.com/relab/libraftgorums
+go get github.com/relab/raftgorums
 
 # Install the binaries.
 make install
@@ -41,6 +41,5 @@ make clean
 #+END_SRC
 
 *** For details on the specific programs:
-- [[https://github.com/relab/libraftgorums/tree/master/cmd/replica][Replica]]
-- [[https://github.com/relab/libraftgorums/tree/master/cmd/throughput][Throughput]]
-- [[https://github.com/relab/libraftgorums/tree/master/cmd/latency][Latency]]
+- [[https://github.com/relab/raftgorums/tree/master/cmd/raftgorums-server][raftgorums-server]]
+- [[https://github.com/relab/raftgorums/tree/master/cmd/raftgorums-throughput][raftgorums-throughput]]
