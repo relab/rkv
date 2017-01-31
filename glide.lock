@@ -1,5 +1,5 @@
 hash: 6426906de2b6ba87371ebe0780727c69b3a8d6a87ca23338619d0141ddeee73a
-updated: 2017-01-31T17:00:43.910592147+01:00
+updated: 2017-01-31T17:57:27.158619299+01:00
 imports:
 - name: github.com/boltdb/bolt
   version: 9145e047707a32d3685f15d9fd97e1b25445ba1b
@@ -17,7 +17,7 @@ imports:
   version: 0d7e2cef30684ce2954816ed046a39670cec9e6e
   repo: git@github.com:relab/gorums-dev.git
 - name: github.com/relab/libraftgorums
-  version: 8cce2e7d56010a937aefaf2f12b2f163a1e81c1d
+  version: bbcd1a7e74d42cf2cc81032164fe1e9946bc7f16
   subpackages:
   - gorumspb
   - raftpb
