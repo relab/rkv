@@ -1,4 +1,4 @@
-PKGS		 := $(shell go list ./... | grep -ve "vendor")
+PKGS     := $(shell go list ./... | grep -ve "vendor")
 CMD_PKGS := $(shell go list ./... | grep -ve "vendor" | grep "cmd")
 
 .PHONY: all

@@ -1,5 +1,4 @@
 {
     "Vendor": true,
-    "Skip": ["gorumspb"],
     "Deadline": "60s"
 }
