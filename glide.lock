@@ -1,8 +1,8 @@
 hash: 6426906de2b6ba87371ebe0780727c69b3a8d6a87ca23338619d0141ddeee73a
-updated: 2017-01-30T14:47:23.196152914+01:00
+updated: 2017-01-31T11:15:20.602879432+01:00
 imports:
 - name: github.com/boltdb/bolt
-  version: a705895fdad108f053eae7ee011ed94a0541ee13
+  version: 9145e047707a32d3685f15d9fd97e1b25445ba1b
 - name: github.com/gogo/protobuf
   version: 909568be09de550ed094403c2bf8a261b5bb730a
   subpackages:
@@ -17,7 +17,7 @@ imports:
   version: 0d7e2cef30684ce2954816ed046a39670cec9e6e
   repo: git@github.com:relab/gorums-dev.git
 - name: github.com/relab/libraftgorums
-  version: 11d566e9249e78362e75d81571ea5b81b6c349ae
+  version: 47d8caf845dbc8688c84d675373d71d2b48c961a
   subpackages:
   - gorumspb
   - raftpb
