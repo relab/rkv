@@ -2,20 +2,17 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
-	"net"
 	"os"
 	"runtime/pprof"
 	"strings"
 	"time"
 
 	"github.com/relab/libraftgorums"
-	gorums "github.com/relab/libraftgorums/gorumspb"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
@@ -84,105 +81,20 @@ func main() {
 		log.Fatal(err)
 	}
 
-	raftServer := &Server{
-		raft.NewReplica(&raft.Config{
-			ID:               *id,
-			Nodes:            nodes,
-			Batch:            *batch,
-			Storage:          storage,
-			ElectionTimeout:  *electionTimeout,
-			HeartbeatTimeout: *heartbeatTimeout,
-			MaxAppendEntries: *maxAppendEntries,
-			Logger:           log.New(os.Stderr, "raft", log.LstdFlags),
-		}),
-	}
-
-	s := grpc.NewServer()
-	gorums.RegisterRaftServer(s, raftServer)
-
-	l, err := net.Listen("tcp", nodes[*id-1])
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	go func() {
-		serr := s.Serve(l)
-
-		if serr != nil {
-			log.Fatal(serr)
-		}
-	}()
-
-	opts := []gorums.ManagerOption{
-		gorums.WithGrpcDialOptions(
-			grpc.WithBlock(),
-			grpc.WithInsecure(),
-			grpc.WithTimeout(raft.TCPConnect*time.Millisecond)),
-		// TODO WithLogger?
-	}
-
-	// Exclude self.
-	mgr, err := gorums.NewManager(append(nodes[:*id-1], nodes[*id:]...), opts...)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	conf, err := mgr.NewConfiguration(mgr.NodeIDs(), raft.NewQuorumSpec(len(nodes)))
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	go func() {
-		for {
-			rvreqout := raftServer.RequestVoteRequestChan()
-			aereqout := raftServer.AppendEntriesRequestChan()
-
-			select {
-			case req := <-rvreqout:
-				ctx, cancel := context.WithTimeout(context.Background(), raft.TCPHeartbeat*time.Millisecond)
-				r, err := conf.RequestVote(ctx, req)
-				cancel()
-
-				if err != nil {
-					// TODO Better error message.
-					log.Println(fmt.Sprintf("RequestVote failed = %v", err))
-
-				}
-
-				if r.RequestVoteResponse == nil {
-					continue
-				}
-
-				raftServer.HandleRequestVoteResponse(r.RequestVoteResponse)
-			case req := <-aereqout:
-				ctx, cancel := context.WithTimeout(context.Background(), raft.TCPHeartbeat*time.Millisecond)
-				r, err := conf.AppendEntries(ctx, req)
-
-				if err != nil {
-					// TODO Better error message.
-					log.Println(fmt.Sprintf("AppendEntries failed = %v", err))
-
-					if r.AppendEntriesResponse == nil {
-						continue
-					}
-				}
-
-				// Cancel on abort.
-				if !r.AppendEntriesResponse.Success {
-					cancel()
-				}
-
-				raftServer.HandleAppendEntriesResponse(r.AppendEntriesResponse)
-			}
-		}
-	}()
+	node := raft.NewNode(&raft.Config{
+		ID:               *id,
+		Nodes:            nodes,
+		Batch:            *batch,
+		Storage:          storage,
+		ElectionTimeout:  *electionTimeout,
+		HeartbeatTimeout: *heartbeatTimeout,
+		MaxAppendEntries: *maxAppendEntries,
+		Logger:           log.New(os.Stderr, "raft", log.LstdFlags),
+	})
 
 	if *cpuprofile != "" {
 		go func() {
-			raftServer.Run()
+			log.Fatal(node.Run())
 		}()
 
 		reader := bufio.NewReader(os.Stdin)
@@ -194,6 +106,6 @@ func main() {
 
 		pprof.StopCPUProfile()
 	} else {
-		raftServer.Run()
+		log.Fatal(node.Run())
 	}
 }
