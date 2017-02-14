@@ -2,44 +2,51 @@
 
 This repository contains an implementation of the [[https://raft.github.io/raft.pdf][Raft Consensus Algorithm]] using the [[https://github.com/relab/gorums][Gorums framework]].
 
+** Project layout
+
+   - github.com/relab/rkv :: Key-value store code.
+   - github.com/relab/rkv/cmd/rkvgorumsd :: Raft key-value store Gorums version.
+   - github.com/relab/rkv/cmd/rkvgrpcd :: Raft key-value store gRPC version.
+   - github.com/relab/rkv/cmd/rkvctl :: Raft key-value store client.
+
 ** Install
 
-You might not need to execute all the steps but this should work if you are starting from scratch on Ubuntu 16.10.
+   You might not need to execute all the steps but this should work if you are starting from scratch on Ubuntu 16.10.
 
-#+BEGIN_SRC shell
-# You need at least Go and Git.
-apt install -y golang-go git
+   #+BEGIN_SRC shell
+   # You need at least Go and Git.
+   apt install -y golang-go git
 
-# If you have not set up your Go environtment; this is the minimal required.
-cat <<EOF >> ~/.profile
-export GOPATH=~/go
-export PATH=\$PATH:\$GOPATH/bin
-EOF
+   # If you have not set up your Go environtment; this is the minimal required.
+   cat <<EOF >> ~/.profile
+   export GOPATH=~/go
+   export PATH=\$PATH:\$GOPATH/bin
+   EOF
 
-## Make sure $GOPATH is set and $GOPATH/bin is in $PATH.
-source ~/.profile
+   ## Make sure $GOPATH is set and $GOPATH/bin is in $PATH.
+   source ~/.profile
 
-# Alternatively (but won't be permanent).
-## export GOPATH=~/go
-## export PATH=$PATH:$GOPATH/bin
+   # Alternatively (but won't be permanent).
+   ## export GOPATH=~/go
+   ## export PATH=$PATH:$GOPATH/bin
 
-# If the repository is private you need to create an SSH key and add it at github.com/settings/keys.
-# and make sure it's in your ~/.ssh folder.
-git config --global url."git@github.com:".insteadOf "https://github.com/"
+   # If the repository is private you need to create an SSH key and add it at github.com/settings/keys.
+   # and make sure it's in your ~/.ssh folder.
+   git config --global url."git@github.com:".insteadOf "https://github.com/"
 
-# Get the source.
-go get github.com/relab/raftgorums
+   # Get the source.
+   go get github.com/relab/rkv
 
-# Install the binaries.
-make install
+   # Install the binaries.
+   make install
 
-# Running tests.
-make test
+   # Running tests.
+   make test
 
-# Removing the binaries.
-make clean
-#+END_SRC
+   # Removing the binaries.
+   make clean
+   #+END_SRC
 
 *** For details on the specific programs:
-- [[https://github.com/relab/raftgorums/tree/master/cmd/raftgorums-server][raftgorums-server]]
-- [[https://github.com/relab/raftgorums/tree/master/cmd/raftgorums-throughput][raftgorums-throughput]]
+    - [[https://github.com/relab/rkv/tree/master/cmd/rkvdgorumsd][rkvgorumsd]]
+    - [[https://github.com/relab/rkv/tree/master/cmd/rkvctl][rkvctl]]
