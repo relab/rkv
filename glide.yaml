@@ -1,20 +1,14 @@
-package: github.com/relab/raftgorums
+package: github.com/relab/rkv
 import:
-- package: github.com/gogo/protobuf
-  version: ~0.3.0
+- package: github.com/relab/raft
   subpackages:
-  - proto
-- package: github.com/relab/gorums
-  repo: git@github.com:relab/gorums-dev.git
-- package: github.com/relab/libraftgorums
-  subpackages:
-  - raftpb
+  - raftgorums
+  - raftgorums/gorumspb
+  - raftgorums/raftpb
 - package: golang.org/x/net
   subpackages:
   - context
-  - trace
 - package: google.golang.org/grpc
   version: ~1.0.5
   subpackages:
-  - codes
   - grpclog
