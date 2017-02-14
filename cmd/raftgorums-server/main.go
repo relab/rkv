@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ func main() {
 	var (
 		id               = flag.Uint64("id", 0, "server ID")
 		cluster          = flag.String("cluster", ":9201", "comma separated cluster servers")
+		addr             = flag.String("addr", ":9200", "service address")
 		bench            = flag.Bool("quiet", false, "Silence log output")
 		recover          = flag.Bool("recover", false, "Recover from stable storage")
 		batch            = flag.Bool("batch", true, "enable batching")
@@ -75,5 +77,10 @@ func main() {
 		Logger:           log.New(os.Stderr, "raft", log.LstdFlags),
 	})
 
-	log.Fatal(node.Run())
+	go func() {
+		log.Fatal(node.Run())
+	}()
+
+	service := NewService(NewStore())
+	log.Fatal(http.ListenAndServe(*addr, service))
 }
