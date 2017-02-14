@@ -206,9 +206,19 @@ func (r *Raft) Run() {
 		case <-r.baseline.C:
 			r.heardFromLeader = false
 		case <-r.election.C:
-			// #F2 If election timeout elapses without receiving AppendEntries RPC from current leader
-			// or granting vote to candidate: convert to candidate.
-			r.startElection()
+			if r.state == Leader {
+				// Thesis §6.2: A leader in Raft steps down if
+				// an election timeout elapses without a
+				// successful round of heartbeats to a majority
+				// of its cluster.
+				r.becomeFollower(r.currentTerm)
+			} else {
+				// #F2 If election timeout elapses without
+				// receiving AppendEntries RPC from current
+				// leader or granting vote to candidate: convert
+				// to candidate.
+				r.startElection()
+			}
 
 			// #C3 Reset election timer.
 			r.election.Restart()
@@ -598,9 +608,30 @@ func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 		r.heardFromLeader = true
 		r.nextIndex = r.storage.NumEntries() + 1
 
-		// #L1 Upon election: send initial empty AppendEntries RPCs (heartbeat) to each server;
+		// Empty queue.
+	EMPTYCH:
+		for {
+			select {
+			case <-r.queue:
+			default:
+				// Paper §8: We add a no-op, so that the leader
+				// commits an entry from its own term. This
+				// ensures that the leader knows which entries
+				// are committed.
+				r.queue <- &pb.Entry{
+					Term: r.currentTerm,
+					Data: &pb.ClientCommandRequest{Command: "noop"},
+				}
+				break EMPTYCH
+			}
+		}
+
+		r.pending = make(map[UniqueCommand]chan<- *pb.ClientCommandRequest, BufferSize)
+
+		// #L1 Upon election: send initial empty (no-op) AppendEntries
+		// RPCs (heartbeat) to each server.
 		r.baseline.Disable()
-		r.election.Disable()
+		r.election.Restart()
 		r.heartbeat.Restart()
 		r.cycle()
 
@@ -693,6 +724,9 @@ func (r *Raft) HandleAppendEntriesResponse(response *pb.AppendEntriesResponse) {
 
 	if r.state == Leader {
 		if response.Success {
+			// Successful heartbeat to a majority.
+			r.election.Restart()
+
 			r.matchIndex = response.MatchIndex
 			r.nextIndex = r.matchIndex + 1
 
