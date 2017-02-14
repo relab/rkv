@@ -6,10 +6,7 @@ Consensus Algorithm]]. One backed by the [[https://github.com/relab/gorums][Goru
 ** Project layout
 
    - github.com/relab/rkv :: Key-value store code.
-   - github.com/relab/rkv/cmd/rkvgorumsd :: Key-value store server backed by
-        Raft Gorums.
-   - github.com/relab/rkv/cmd/rkvgrpcd :: Key-value store server backed by Raft
-        gRPC.
+   - github.com/relab/rkv/cmd/rkvd :: Key-value store server.
    - github.com/relab/rkv/cmd/rkvctl :: key-value store client.
 
 ** Install
@@ -52,5 +49,5 @@ Consensus Algorithm]]. One backed by the [[https://github.com/relab/gorums][Goru
    #+END_SRC
 
 *** For details on the specific programs:
-    - [[https://github.com/relab/rkv/tree/master/cmd/rkvdgorumsd][rkvgorumsd]]
+    - [[https://github.com/relab/rkv/tree/master/cmd/rkvd][rkvd]]
     - [[https://github.com/relab/rkv/tree/master/cmd/rkvctl][rkvctl]]

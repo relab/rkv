@@ -26,4 +26,4 @@ rkvctl -leader LEADERIP:9200
 #+END_SRC
 
 *** For starting a cluster to interact with:
-- [[https://github.com/relab/rkv/tree/master/cmd/rkvgorumsd][rkvgorumsd]]
+- [[https://github.com/relab/rkv/tree/master/cmd/rkvd][rkvd]]
