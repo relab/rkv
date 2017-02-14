@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/relab/raft/raftgorums"
+	"github.com/relab/rkv"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
@@ -81,6 +82,6 @@ func main() {
 		log.Fatal(node.Run())
 	}()
 
-	service := NewService(NewStore())
+	service := rkv.NewService(rkv.NewStore())
 	log.Fatal(http.ListenAndServe(*addr, service))
 }
