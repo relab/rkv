@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
-	"runtime/pprof"
 	"strings"
 	"time"
 
@@ -24,7 +22,6 @@ func main() {
 		cluster          = flag.String("cluster", ":9201", "comma separated cluster servers")
 		bench            = flag.Bool("quiet", false, "Silence log output")
 		recover          = flag.Bool("recover", false, "Recover from stable storage")
-		cpuprofile       = flag.String("cpuprofile", "", "Write cpu profile to file")
 		batch            = flag.Bool("batch", true, "enable batching")
 		electionTimeout  = flag.Duration("election", 2*time.Second, "How long servers wait before starting an election")
 		heartbeatTimeout = flag.Duration("heartbeat", 250*time.Millisecond, "How often a heartbeat should be sent")
@@ -33,20 +30,6 @@ func main() {
 
 	flag.Parse()
 	rand.Seed(time.Now().UnixNano())
-
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = pprof.StartCPUProfile(f)
-
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
 
 	if *id == 0 {
 		fmt.Print("-id argument is required\n\n")
@@ -92,20 +75,5 @@ func main() {
 		Logger:           log.New(os.Stderr, "raft", log.LstdFlags),
 	})
 
-	if *cpuprofile != "" {
-		go func() {
-			log.Fatal(node.Run())
-		}()
-
-		reader := bufio.NewReader(os.Stdin)
-		_, _, err := reader.ReadLine()
-
-		if err != nil {
-			log.Println(err)
-		}
-
-		pprof.StopCPUProfile()
-	} else {
-		log.Fatal(node.Run())
-	}
+	log.Fatal(node.Run())
 }
