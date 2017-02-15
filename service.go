@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/relab/raft"
 )
@@ -24,40 +25,73 @@ func NewService(store *Store) *Service {
 
 // ServeHTTP implements the http.Handler interface.
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	key := r.URL.Path[1:]
+	path := strings.Split(r.URL.Path, "/")
 
-	if len(key) < 1 {
+	if len(path) < 2 {
 		http.Error(w, "400 Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	switch r.Method {
-	case http.MethodGet:
-		value, err := s.store.Lookup(key)
+	switch path[1] {
+	case "register":
+		id, err := s.store.Register()
 
 		if err != nil {
 			raftError(w, r, err)
 			return
 		}
 
-		fmt.Fprintf(w, "%s", value)
-
-	case http.MethodPut:
-		value, err := ioutil.ReadAll(r.Body)
-
-		if err != nil {
+		fmt.Fprintln(w, id)
+		return
+	case "store":
+		if len(path) != 3 {
 			http.Error(w, "400 Bad Request", http.StatusBadRequest)
 			return
 		}
 
-		err = s.store.Insert(key, string(value))
+		key := path[2]
 
-		if err != nil {
-			raftError(w, r, err)
+		if len(key) < 1 {
+			http.Error(w, "400 Bad Request", http.StatusBadRequest)
 			return
 		}
 
-		w.WriteHeader(http.StatusAccepted)
+		switch r.Method {
+		case http.MethodGet:
+			value, err := s.store.Lookup(key)
+
+			if err != nil {
+				raftError(w, r, err)
+				return
+			}
+
+			fmt.Fprintln(w, value)
+
+		case http.MethodPut:
+			value, err := ioutil.ReadAll(r.Body)
+
+			if err != nil {
+				http.Error(w, "400 Bad Request", http.StatusBadRequest)
+				return
+			}
+
+			query := r.URL.Query()
+			id := query["id"][0]
+			seq := query["seq"][0]
+
+			err = s.store.Insert(id, seq, key, string(value))
+
+			if err != nil {
+				raftError(w, r, err)
+				return
+			}
+
+			// TODO Change to StatusOK when we actually verify commitment.
+			w.WriteHeader(http.StatusAccepted)
+		}
+	default:
+		http.NotFound(w, r)
+		return
 	}
 }
 
