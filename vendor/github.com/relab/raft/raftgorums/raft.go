@@ -122,17 +122,6 @@ func NewRaft(cfg *Config) *Raft {
 		cfg.Logger = log.New(ioutil.Discard, "", 0)
 	}
 
-	var nodes []string
-
-	// Remove self
-	for _, node := range cfg.Nodes {
-		if node == cfg.Nodes[cfg.ID-1] {
-			continue
-		}
-
-		nodes = append(nodes, node)
-	}
-
 	term, err := cfg.Storage.Get(KeyTerm)
 
 	if err != nil {
@@ -156,7 +145,7 @@ func NewRaft(cfg *Config) *Raft {
 		votedFor:         votedFor,
 		storage:          cfg.Storage,
 		batch:            cfg.Batch,
-		addrs:            nodes,
+		addrs:            cfg.Nodes,
 		nextIndex:        1,
 		baselineTimeout:  cfg.ElectionTimeout,
 		electionTimeout:  electionTimeout,
@@ -405,6 +394,16 @@ func (r *Raft) ProposeConf(ctx context.Context, conf raft.TODOConfChange) error 
 
 // TODO Implement.
 func (r *Raft) Read(ctx context.Context) error {
+	r.Lock()
+	state := r.state
+	leader := r.leader
+	leaderAddr := r.addrs[leader-1]
+	r.Unlock()
+
+	if state != Leader {
+		return raft.ErrNotLeader{Leader: leader, LeaderAddr: leaderAddr}
+	}
+
 	return nil
 }
 
@@ -412,11 +411,12 @@ func (r *Raft) ProposeCmd(ctx context.Context, cmd []byte) error {
 	r.Lock()
 	state := r.state
 	leader := r.leader
+	leaderAddr := r.addrs[leader-1]
 	term := r.currentTerm
 	r.Unlock()
 
 	if state != Leader {
-		return raft.ErrNotLeader{Leader: leader}
+		return raft.ErrNotLeader{Leader: leader, LeaderAddr: leaderAddr}
 	}
 
 	select {
