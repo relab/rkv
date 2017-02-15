@@ -20,7 +20,12 @@ func NewService(store *Store) *Service {
 
 // ServeHTTP implements the http.Handler interface.
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	key := r.RequestURI
+	key := r.URL.Path[1:]
+
+	if len(key) < 1 {
+		http.Error(w, "400 Bad Request", http.StatusBadRequest)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodGet:
@@ -38,10 +43,11 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			http.Error(w, "400 Bad Request", http.StatusBadRequest)
+			break
 		}
 
 		if ok := s.store.Insert(key, string(value)); !ok {
-			w.WriteHeader(http.StatusServiceUnavailable)
+			http.Error(w, "503 Service Unavailable", http.StatusServiceUnavailable)
 			break
 		}
 

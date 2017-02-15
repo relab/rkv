@@ -82,6 +82,6 @@ func main() {
 		log.Fatal(node.Run())
 	}()
 
-	service := rkv.NewService(rkv.NewStore())
+	service := rkv.NewService(rkv.NewStore(node.Raft))
 	log.Fatal(http.ListenAndServe(*addr, service))
 }
