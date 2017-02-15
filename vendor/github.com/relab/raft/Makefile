@@ -11,7 +11,6 @@ protocgorums:
 
 .PHONY: proto
 proto: protocgorums
-	protoc -I ../../../:. --gorums_out=plugins=grpc+gorums:. gorumspb/gorums.proto
 	protoc -I ../../../:. --gogofast_out=. raftpb/raft.proto
 
 .PHONY: test
@@ -22,6 +21,6 @@ test:
 bench:
 	go test -v -run ^none -bench .
 
-.PHONY: lint
+.PHONY: check
 check:
 	@gometalinter --config metalinter.json

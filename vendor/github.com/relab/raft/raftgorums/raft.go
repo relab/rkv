@@ -1,15 +1,17 @@
 package raftgorums
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math/rand"
 	"sync"
 	"time"
 
+	"golang.org/x/net/context"
+
+	"github.com/relab/raft"
 	pb "github.com/relab/raft/raftgorums/raftpb"
+	commonpb "github.com/relab/raft/raftpb"
 )
 
 // State represents one of the Raft server states.
@@ -37,11 +39,6 @@ const None = 0
 // BufferSize is the initial buffer size used for maps and buffered channels
 // that directly depend on the number of requests being serviced.
 const BufferSize = 10000
-
-var (
-	// ErrLateCommit indicates an entry taking too long to commit.
-	ErrLateCommit = errors.New("Entry not committed in time.")
-)
 
 // Config contains the configuration needed to start an instance of Raft.
 type Config struct {
@@ -104,11 +101,10 @@ type Raft struct {
 
 	preElection bool
 
-	pending map[UniqueCommand]chan<- *pb.ClientCommandRequest
-
 	maxAppendEntries uint64
-	queue            chan *pb.Entry
-	commands         map[UniqueCommand]*pb.ClientCommandRequest
+	queue            chan *commonpb.Entry
+
+	committed chan []commonpb.Entry
 
 	batch bool
 
@@ -170,10 +166,9 @@ func NewRaft(cfg *Config) *Raft {
 		heartbeat:        heartbeat,
 		cyclech:          make(chan struct{}, 128),
 		preElection:      true,
-		pending:          make(map[UniqueCommand]chan<- *pb.ClientCommandRequest, BufferSize),
 		maxAppendEntries: cfg.MaxAppendEntries,
-		queue:            make(chan *pb.Entry, BufferSize),
-		commands:         make(map[UniqueCommand]*pb.ClientCommandRequest),
+		queue:            make(chan *commonpb.Entry, BufferSize),
+		committed:        make(chan []commonpb.Entry, BufferSize),
 		rvreqout:         make(chan *pb.RequestVoteRequest, BufferSize),
 		aereqout:         make(chan *pb.AppendEntriesRequest, BufferSize),
 		logger:           &Logger{cfg.ID, cfg.Logger},
@@ -334,7 +329,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 		}
 	}
 
-	var prevEntry *pb.Entry
+	var prevEntry *commonpb.Entry
 
 	// TODO Wrap storage with functions that panic.
 	if req.PrevLogIndex > 0 && req.PrevLogIndex-1 < r.storage.NumEntries() {
@@ -404,66 +399,36 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	}
 }
 
-// HandleClientCommandRequest must be called when receiving a
-// ClientCommandRequest, the return value must be delivered to the requester.
-func (r *Raft) HandleClientCommandRequest(request *pb.ClientCommandRequest) (*pb.ClientCommandResponse, error) {
-	if response, isLeader := r.logCommand(request); isLeader {
-		if !r.batch {
-			r.sendAppendEntries()
-		}
-
-		select {
-		// Wait on committed entry.
-		case entry := <-response:
-			return &pb.ClientCommandResponse{Status: pb.OK, Response: entry.Command, ClientID: entry.ClientID}, nil
-
-		// Return if responding takes too much time.
-		// The client will retry.
-		case <-time.After(TCPHeartbeat * time.Millisecond):
-			return nil, ErrLateCommit
-		}
-	}
-
-	hint := r.getHint()
-
-	return &pb.ClientCommandResponse{Status: pb.NOT_LEADER, LeaderHint: hint}, nil
+func (r *Raft) ProposeConf(ctx context.Context, conf raft.TODOConfChange) error {
+	panic("not implemented")
 }
 
-func (r *Raft) logCommand(request *pb.ClientCommandRequest) (<-chan *pb.ClientCommandRequest, bool) {
+// TODO Implement.
+func (r *Raft) Read(ctx context.Context) error {
+	return nil
+}
+
+func (r *Raft) ProposeCmd(ctx context.Context, cmd []byte) error {
 	r.Lock()
-	defer r.Unlock()
+	state := r.state
+	leader := r.leader
+	term := r.currentTerm
+	r.Unlock()
 
-	if r.state == Leader {
-		if request.SequenceNumber == 0 {
-			request.ClientID = rand.Uint32()
-
-			if logLevel >= INFO {
-				r.logger.from(uint64(request.ClientID), fmt.Sprintf("Client request = %s", request.Command))
-			}
-		} else if logLevel >= TRACE {
-			r.logger.from(uint64(request.ClientID), fmt.Sprintf("Client request = %s", request.Command))
-		}
-
-		commandID := UniqueCommand{ClientID: request.ClientID, SequenceNumber: request.SequenceNumber}
-
-		if old, ok := r.commands[commandID]; ok {
-			response := make(chan *pb.ClientCommandRequest, 1)
-			response <- old
-
-			return response, true
-		}
-
-		r.Unlock()
-		r.queue <- &pb.Entry{Term: r.currentTerm, Data: request}
-		r.Lock()
-
-		response := make(chan *pb.ClientCommandRequest)
-		r.pending[commandID] = response
-
-		return response, true
+	if state != Leader {
+		return raft.ErrNotLeader{Leader: leader}
 	}
 
-	return nil, false
+	select {
+	case r.queue <- &commonpb.Entry{
+		EntryType: commonpb.EntryNormal,
+		Term:      term,
+		Data:      cmd,
+	}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (r *Raft) advanceCommitIndex() {
@@ -483,6 +448,9 @@ func (r *Raft) advanceCommitIndex() {
 
 // TODO Assumes caller already holds lock on Raft.
 func (r *Raft) newCommit(old uint64) {
+	entries := make([]commonpb.Entry, r.commitIndex-old)
+
+	// TODO Change to GetEntries -> then ring buffer.
 	for i := old; i < r.commitIndex; i++ {
 		committed, err := r.storage.GetEntry(i)
 
@@ -490,23 +458,14 @@ func (r *Raft) newCommit(old uint64) {
 			panic(fmt.Errorf("couldn't retrieve entry: %v", err))
 		}
 
-		sequenceNumber := committed.Data.SequenceNumber
-		clientID := committed.Data.ClientID
-		commandID := UniqueCommand{ClientID: clientID, SequenceNumber: sequenceNumber}
-
-		if response, ok := r.pending[commandID]; ok {
-			// If entry is not committed fast enough, the client
-			// will retry.
-			go func(response chan<- *pb.ClientCommandRequest) {
-				select {
-				case response <- committed.Data:
-				case <-time.After(TCPHeartbeat * time.Millisecond):
-				}
-			}(response)
-		}
-
-		r.commands[commandID] = committed.Data
+		entries[i-old] = *committed
 	}
+
+	r.committed <- entries
+}
+
+func (r *Raft) Committed() chan<- []commonpb.Entry {
+	return r.committed
 }
 
 func (r *Raft) startElection() {
@@ -618,15 +577,14 @@ func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 				// commits an entry from its own term. This
 				// ensures that the leader knows which entries
 				// are committed.
-				r.queue <- &pb.Entry{
-					Term: r.currentTerm,
-					Data: &pb.ClientCommandRequest{Command: "noop"},
+				r.queue <- &commonpb.Entry{
+					EntryType: commonpb.EntryNormal,
+					Term:      r.currentTerm,
+					Data:      []byte("noop"),
 				}
 				break EMPTYCH
 			}
 		}
-
-		r.pending = make(map[UniqueCommand]chan<- *pb.ClientCommandRequest, BufferSize)
 
 		// #L1 Upon election: send initial empty (no-op) AppendEntries
 		// RPCs (heartbeat) to each server.
@@ -650,12 +608,15 @@ func (r *Raft) sendAppendEntries() {
 		r.logger.log(fmt.Sprintf("Sending AppendEntries for term %d", r.currentTerm))
 	}
 
-	var toSave []*pb.Entry
+	var toSave []*commonpb.Entry
+	assignIndex := r.storage.NumEntries() + 1
 
 LOOP:
 	for i := r.maxAppendEntries; i > 0; i-- {
 		select {
 		case entry := <-r.queue:
+			entry.Index = assignIndex
+			assignIndex++
 			toSave = append(toSave, entry)
 		default:
 			break LOOP
@@ -669,7 +630,7 @@ LOOP:
 	}
 
 	// #L1
-	entries := []*pb.Entry{}
+	var entries []*commonpb.Entry
 
 	next := r.nextIndex - 1
 
