@@ -29,7 +29,7 @@ func NewStore(raft raft.Raft) *Store {
 
 // Lookup gets a value from the map given a key. It returns a bool indicating if
 // the value was found or not.
-func (s *Store) Lookup(key string) (string, bool) {
+func (s *Store) Lookup(key string) (string, error) {
 	s.slock.RLock()
 	defer s.slock.RUnlock()
 
@@ -37,29 +37,31 @@ func (s *Store) Lookup(key string) (string, bool) {
 	err := s.raft.Read(context.TODO())
 
 	if err != nil {
-		return "", false
+		return "", err
 	}
 
-	value, ok := s.store[key]
+	// Empty string if not set. This depends on the application I think. We
+	// don't really care about the key being set or not.
+	value, _ := s.store[key]
 
-	return value, ok
+	return value, nil
 }
 
 // Insert inserts value in map given a key. It returns true if the value was
 // successfully inserted. False indicates that the client should retry, as we
 // cannot know if the value was inserted successfully or not.
-func (s *Store) Insert(key, value string) bool {
+func (s *Store) Insert(key, value string) error {
 	s.slock.Lock()
 	defer s.slock.Unlock()
 
 	err := s.raft.ProposeCmd(context.TODO(), []byte(fmt.Sprintf("%s=%s", key, value)))
 
 	if err != nil {
-		return false
+		return err
 	}
 
 	// TODO Assumes successful for now.
 	s.store[key] = value
 
-	return true
+	return nil
 }
