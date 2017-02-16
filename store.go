@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/net/context"
@@ -22,7 +21,6 @@ const (
 
 // Store is a key-value store backed by a map.
 type Store struct {
-	slock sync.RWMutex
 	store map[string]string
 
 	nextID  uint64
