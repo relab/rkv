@@ -28,9 +28,6 @@ import math "math"
 import bytes "bytes"
 
 import strings "strings"
-import github_com_gogo_protobuf_proto "github.com/gogo/protobuf/proto"
-import sort "sort"
-import strconv "strconv"
 import reflect "reflect"
 
 import io "io"
@@ -59,6 +56,13 @@ func (*DoubleValue) ProtoMessage()               {}
 func (*DoubleValue) Descriptor() ([]byte, []int) { return fileDescriptorWrappers, []int{0} }
 func (*DoubleValue) XXX_WellKnownType() string   { return "DoubleValue" }
 
+func (m *DoubleValue) GetValue() float64 {
+	if m != nil {
+		return m.Value
+	}
+	return 0
+}
+
 // Wrapper message for `float`.
 //
 // The JSON representation for `FloatValue` is JSON number.
@@ -71,6 +75,13 @@ func (m *FloatValue) Reset()                    { *m = FloatValue{} }
 func (*FloatValue) ProtoMessage()               {}
 func (*FloatValue) Descriptor() ([]byte, []int) { return fileDescriptorWrappers, []int{1} }
 func (*FloatValue) XXX_WellKnownType() string   { return "FloatValue" }
+
+func (m *FloatValue) GetValue() float32 {
+	if m != nil {
+		return m.Value
+	}
+	return 0
+}
 
 // Wrapper message for `int64`.
 //
@@ -85,6 +96,13 @@ func (*Int64Value) ProtoMessage()               {}
 func (*Int64Value) Descriptor() ([]byte, []int) { return fileDescriptorWrappers, []int{2} }
 func (*Int64Value) XXX_WellKnownType() string   { return "Int64Value" }
 
+func (m *Int64Value) GetValue() int64 {
+	if m != nil {
+		return m.Value
+	}
+	return 0
+}
+
 // Wrapper message for `uint64`.
 //
 // The JSON representation for `UInt64Value` is JSON string.
@@ -97,6 +115,13 @@ func (m *UInt64Value) Reset()                    { *m = UInt64Value{} }
 func (*UInt64Value) ProtoMessage()               {}
 func (*UInt64Value) Descriptor() ([]byte, []int) { return fileDescriptorWrappers, []int{3} }
 func (*UInt64Value) XXX_WellKnownType() string   { return "UInt64Value" }
+
+func (m *UInt64Value) GetValue() uint64 {
+	if m != nil {
+		return m.Value
+	}
+	return 0
+}
 
 // Wrapper message for `int32`.
 //
@@ -111,6 +136,13 @@ func (*Int32Value) ProtoMessage()               {}
 func (*Int32Value) Descriptor() ([]byte, []int) { return fileDescriptorWrappers, []int{4} }
 func (*Int32Value) XXX_WellKnownType() string   { return "Int32Value" }
 
+func (m *Int32Value) GetValue() int32 {
+	if m != nil {
+		return m.Value
+	}
+	return 0
+}
+
 // Wrapper message for `uint32`.
 //
 // The JSON representation for `UInt32Value` is JSON number.
@@ -123,6 +155,13 @@ func (m *UInt32Value) Reset()                    { *m = UInt32Value{} }
 func (*UInt32Value) ProtoMessage()               {}
 func (*UInt32Value) Descriptor() ([]byte, []int) { return fileDescriptorWrappers, []int{5} }
 func (*UInt32Value) XXX_WellKnownType() string   { return "UInt32Value" }
+
+func (m *UInt32Value) GetValue() uint32 {
+	if m != nil {
+		return m.Value
+	}
+	return 0
+}
 
 // Wrapper message for `bool`.
 //
@@ -137,6 +176,13 @@ func (*BoolValue) ProtoMessage()               {}
 func (*BoolValue) Descriptor() ([]byte, []int) { return fileDescriptorWrappers, []int{6} }
 func (*BoolValue) XXX_WellKnownType() string   { return "BoolValue" }
 
+func (m *BoolValue) GetValue() bool {
+	if m != nil {
+		return m.Value
+	}
+	return false
+}
+
 // Wrapper message for `string`.
 //
 // The JSON representation for `StringValue` is JSON string.
@@ -150,6 +196,13 @@ func (*StringValue) ProtoMessage()               {}
 func (*StringValue) Descriptor() ([]byte, []int) { return fileDescriptorWrappers, []int{7} }
 func (*StringValue) XXX_WellKnownType() string   { return "StringValue" }
 
+func (m *StringValue) GetValue() string {
+	if m != nil {
+		return m.Value
+	}
+	return ""
+}
+
 // Wrapper message for `bytes`.
 //
 // The JSON representation for `BytesValue` is JSON string.
@@ -162,6 +215,13 @@ func (m *BytesValue) Reset()                    { *m = BytesValue{} }
 func (*BytesValue) ProtoMessage()               {}
 func (*BytesValue) Descriptor() ([]byte, []int) { return fileDescriptorWrappers, []int{8} }
 func (*BytesValue) XXX_WellKnownType() string   { return "BytesValue" }
+
+func (m *BytesValue) GetValue() []byte {
+	if m != nil {
+		return m.Value
+	}
+	return nil
+}
 
 func init() {
 	proto.RegisterType((*DoubleValue)(nil), "google.protobuf.DoubleValue")
@@ -835,24 +895,6 @@ func valueToGoStringWrappers(v interface{}, typ string) string {
 	}
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
-}
-func extensionToGoStringWrappers(m github_com_gogo_protobuf_proto.Message) string {
-	e := github_com_gogo_protobuf_proto.GetUnsafeExtensionsMap(m)
-	if e == nil {
-		return "nil"
-	}
-	s := "proto.NewUnsafeXXX_InternalExtensions(map[int32]proto.Extension{"
-	keys := make([]int, 0, len(e))
-	for k := range e {
-		keys = append(keys, int(k))
-	}
-	sort.Ints(keys)
-	ss := []string{}
-	for _, k := range keys {
-		ss = append(ss, strconv.Itoa(k)+": "+e[int32(k)].GoString())
-	}
-	s += strings.Join(ss, ",") + "})"
-	return s
 }
 func (m *DoubleValue) Marshal() (dAtA []byte, err error) {
 	size := m.Size()

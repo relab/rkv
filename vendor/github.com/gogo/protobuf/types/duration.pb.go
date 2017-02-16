@@ -18,9 +18,6 @@ import fmt "fmt"
 import math "math"
 
 import strings "strings"
-import github_com_gogo_protobuf_proto "github.com/gogo/protobuf/proto"
-import sort "sort"
-import strconv "strconv"
 import reflect "reflect"
 
 import io "io"
@@ -95,6 +92,20 @@ func (m *Duration) Reset()                    { *m = Duration{} }
 func (*Duration) ProtoMessage()               {}
 func (*Duration) Descriptor() ([]byte, []int) { return fileDescriptorDuration, []int{0} }
 func (*Duration) XXX_WellKnownType() string   { return "Duration" }
+
+func (m *Duration) GetSeconds() int64 {
+	if m != nil {
+		return m.Seconds
+	}
+	return 0
+}
+
+func (m *Duration) GetNanos() int32 {
+	if m != nil {
+		return m.Nanos
+	}
+	return 0
+}
 
 func init() {
 	proto.RegisterType((*Duration)(nil), "google.protobuf.Duration")
@@ -189,24 +200,6 @@ func valueToGoStringDuration(v interface{}, typ string) string {
 	}
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
-}
-func extensionToGoStringDuration(m github_com_gogo_protobuf_proto.Message) string {
-	e := github_com_gogo_protobuf_proto.GetUnsafeExtensionsMap(m)
-	if e == nil {
-		return "nil"
-	}
-	s := "proto.NewUnsafeXXX_InternalExtensions(map[int32]proto.Extension{"
-	keys := make([]int, 0, len(e))
-	for k := range e {
-		keys = append(keys, int(k))
-	}
-	sort.Ints(keys)
-	ss := []string{}
-	for _, k := range keys {
-		ss = append(ss, strconv.Itoa(k)+": "+e[int32(k)].GoString())
-	}
-	s += strings.Join(ss, ",") + "})"
-	return s
 }
 func (m *Duration) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
