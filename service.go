@@ -108,8 +108,7 @@ func (s *Service) handleStore(w http.ResponseWriter, r *http.Request, key string
 			return
 		}
 
-		// TODO Change to StatusOK when we actually verify commitment.
-		w.WriteHeader(http.StatusAccepted)
+		w.WriteHeader(http.StatusOK)
 	}
 }
 
