@@ -182,9 +182,13 @@ func (s *Store) Lookup(key string, allowStale bool) (string, error) {
 	defer cancel()
 
 	if !allowStale {
-		err := s.raft.Read(ctx)
+		readIndex, err := s.raft.Read(ctx)
 
 		if err != nil {
+			return "", err
+		}
+
+		if err := s.waitUntilApplied(ctx, readIndex); err != nil {
 			return "", err
 		}
 	}
@@ -254,22 +258,8 @@ func (s *Store) validate(ctx context.Context, id string, seq uint64) error {
 		return err
 	}
 
-	s.Lock()
-	ci := s.applied
-
-	if ci < minIndex {
-		done := make(chan struct{})
-
-		s.waitApplied[minIndex] = append(s.waitApplied[minIndex], done)
-		s.Unlock()
-
-		select {
-		case <-done:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	} else {
-		s.Unlock()
+	if err := s.waitUntilApplied(ctx, minIndex); err != nil {
+		return err
 	}
 
 	s.RLock()
@@ -279,5 +269,29 @@ func (s *Store) validate(ctx context.Context, id string, seq uint64) error {
 		return ErrSessionExpired
 	}
 
+	return nil
+}
+
+func (s *Store) waitUntilApplied(ctx context.Context, i uint64) error {
+	s.Lock()
+	ci := s.applied
+
+	if ci < i {
+		done := make(chan struct{})
+
+		// Important that we add done to waitApplied before unlocking.
+		// Otherwise we might leak channels in the map.
+		s.waitApplied[i] = append(s.waitApplied[i], done)
+		s.Unlock()
+
+		select {
+		case <-done:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	s.Unlock()
 	return nil
 }
