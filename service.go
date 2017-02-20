@@ -105,9 +105,18 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func raftError(w http.ResponseWriter, r *http.Request, err error) {
 	switch err := err.(type) {
 	case raft.ErrNotLeader:
-		// TODO Assumes a valid addr is returned.
-		// Try random server if err.LeaderAddr == "".
-		host, port, _ := net.SplitHostPort(err.LeaderAddr)
+		if err.LeaderAddr == "" {
+			// TODO Document that this means the client should
+			// change to a random server.
+			w.Header().Set("Retry-After", "-1")
+			http.Error(w, "503 Service Unavailable", http.StatusServiceUnavailable)
+		}
+
+		host, port, erri := net.SplitHostPort(err.LeaderAddr)
+
+		if erri != nil {
+			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		}
 
 		if host == "" {
 			host = "localhost"
