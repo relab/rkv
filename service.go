@@ -58,8 +58,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		switch r.Method {
 		case http.MethodGet:
-			// TODO Allowing stale reads for now.
-			value, err := s.store.Lookup(key, true)
+			value, err := s.store.Lookup(key, false)
 
 			if err != nil {
 				raftError(w, r, err)
