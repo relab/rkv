@@ -119,11 +119,8 @@ func randSeq() uint64 {
 }
 
 func cmdUID(cmd *cmdpb.Cmd) string {
-	switch cmd.CmdType {
-	case cmdpb.Insert:
+	if cmd.CmdType == cmdpb.Insert {
 		return fmt.Sprintf("INSERT:%s%d", cmd.ClientID, cmd.Seq)
-	case cmdpb.Lookup:
-		return fmt.Sprintf("LOOKUP:%s%d", cmd.ClientID, cmd.Seq)
 	}
 
 	return fmt.Sprintf("REGISTER:%d", cmd.Seq)
