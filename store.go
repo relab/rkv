@@ -3,20 +3,12 @@ package rkv
 import (
 	"fmt"
 	"math/rand"
-	"strconv"
-	"strings"
 	"time"
 
 	"golang.org/x/net/context"
 
 	"github.com/relab/raft"
 	commonpb "github.com/relab/raft/raftpb"
-)
-
-// Command types.
-const (
-	CmdRegister = "REG"
-	CmdInsert   = "INS"
 )
 
 // Store is a key-value store backed by a map.
@@ -52,12 +44,15 @@ func (s *Store) run() {
 			for _, entry := range entries {
 				switch entry.EntryType {
 				case commonpb.EntryNormal:
-					cmd := string(entry.Data)
-					split := strings.Split(cmd, ":")
-					cmdType := split[0]
+					cmd, err := ParseCmd(string(entry.Data))
+
+					if err != nil {
+						// TODO Ignore malformed requests. Log?
+						continue
+					}
 					var res interface{}
 
-					switch cmdType {
+					switch cmd.CmdType {
 					case CmdRegister:
 						id := fmt.Sprintf("%d", entry.Index)
 						res = id
@@ -69,33 +64,27 @@ func (s *Store) run() {
 						}
 						s.clients[id] = 0
 					case CmdInsert:
-						split = strings.Split(split[1], ",")
-
-						id := split[0]
-						seq, _ := strconv.Atoi(split[1])
-
 						// TODO We need to return
 						// ErrSessionExpired, when the
 						// session is expired. TODO If
 						// we see seq > oldseq + 1, we
 						// need to deal with that, i.e,
 						// we might have stale data?
-						if oldseq := s.clients[id]; oldseq >= uint64(seq) {
+						if oldseq := s.clients[cmd.ID]; oldseq >= cmd.Seq {
 							// Already applied.
 							break
 						}
 
-						s.clients[id] = uint64(seq)
-
-						key := split[2]
-						value := split[3]
+						s.clients[cmd.ID] = cmd.Seq
+						key := cmd.Key
+						value := cmd.Value
 
 						s.store[key] = value
 					}
 
-					if ch, ok := s.waiting[cmd]; ok {
+					if ch, ok := s.waiting[cmd.Cmd]; ok {
 						ch <- res
-						delete(s.waiting, cmd)
+						delete(s.waiting, cmd.Cmd)
 					}
 				}
 			}
@@ -121,16 +110,20 @@ func (s *Store) Register() (string, error) {
 
 	// Random int used to uniquely identify command. There is a chance of a
 	// collision, but I'll take those odds any day.
-	cmd := fmt.Sprintf("%s:%d", CmdRegister, rand.Int63())
+	cmd, err := NewCmdRegister(rand.Int63())
 
-	if err := s.raft.ProposeCmd(ctx, []byte(cmd)); err != nil {
+	if err != nil {
+		return "", err
+	}
+
+	if err := s.raft.ProposeCmd(ctx, []byte(cmd.String())); err != nil {
 		return "", err
 	}
 
 	// There is a race condition on the command being committed before we
 	// actually start waiting. If that happens, the wait will timeout, and
 	// the client will retry.
-	res, err := s.waitOnResponse(ctx, cmd)
+	res, err := s.waitOnResponse(ctx, cmd.String())
 
 	if err != nil {
 		return "", err
@@ -165,16 +158,20 @@ func (s *Store) Insert(id, seq, key, value string) error {
 	defer cancel()
 
 	// id and seq uniquely identifies this command.
-	cmd := fmt.Sprintf("%s:%s,%s,%s,%s", CmdInsert, id, seq, key, value)
+	cmd, err := NewCmdInsert(id, seq, key, value)
 
-	if err := s.raft.ProposeCmd(ctx, []byte(cmd)); err != nil {
+	if err != nil {
+		return err
+	}
+
+	if err := s.raft.ProposeCmd(ctx, []byte(cmd.String())); err != nil {
 		return err
 	}
 
 	// There is a race condition on the command being committed before we
 	// actually start waiting. If that happens, the wait will timeout, and
 	// the client will retry.
-	if _, err := s.waitOnResponse(ctx, cmd); err != nil {
+	if _, err := s.waitOnResponse(ctx, cmd.String()); err != nil {
 		return err
 	}
 
