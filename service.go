@@ -122,14 +122,14 @@ func raftError(w http.ResponseWriter, r *http.Request, err error) {
 			host = "localhost"
 		}
 
-		// TODO Hack. Since LeaderAddr is the Raft port, we just assume
-		// the application is using Raft port - 100. Fix means changing
-		// Raft to put the application port into LeaderAddr, however we
-		// don't have a way of knowing the application ports, as they
-		// are set locally.
-		p, _ := strconv.Atoi(port)
-		port = strconv.Itoa(p - 100)
+		// TODO Document that this service always uses Raft port - 100.
+		p, erri := strconv.Atoi(port)
 
+		if erri != nil {
+			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		}
+
+		port = strconv.Itoa(p - 100)
 		addr := net.JoinHostPort(host, port)
 
 		http.Redirect(w, r, "http://"+addr+r.URL.RequestURI(), http.StatusTemporaryRedirect)
