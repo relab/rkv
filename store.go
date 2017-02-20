@@ -198,7 +198,7 @@ func (s *Store) Insert(id string, seq uint64, key, value string) error {
 	// TODO Check if session is valid. Make it a function.
 
 	cmd := cmdpb.Cmd{
-		CmdType:  cmdpb.Register,
+		CmdType:  cmdpb.Insert,
 		ClientID: id,
 		Seq:      seq,
 		Key:      key,
