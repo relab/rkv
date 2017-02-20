@@ -1,6 +1,7 @@
 package rkv
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"time"
@@ -57,6 +58,12 @@ func (s *Store) run() {
 			for _, entry := range entries {
 				switch entry.EntryType {
 				case commonpb.EntryNormal:
+					// Ignore no-op. TODO Use this to allow
+					// queued reads through?
+					if bytes.Equal(raft.NOOP, entry.Data) {
+						continue
+					}
+
 					var cmd cmdpb.Cmd
 					err := cmd.Unmarshal(entry.Data)
 
