@@ -494,18 +494,6 @@ func (m *Marshaler) marshalValue(out *errWriter, prop *proto.Properties, v refle
 			out.write(`null`)
 			return out.err
 		}
-
-		if m, ok := v.Interface().(interface {
-			MarshalJSON() ([]byte, error)
-		}); ok {
-			data, err := m.MarshalJSON()
-			if err != nil {
-				return err
-			}
-			out.write(string(data))
-			return nil
-		}
-
 		pm, ok := iface.(proto.Message)
 		if !ok {
 			if prop.CustomType == "" {
@@ -659,14 +647,7 @@ func (u *Unmarshaler) unmarshalValue(target reflect.Value, inputValue json.RawMe
 		case "Any":
 			return fmt.Errorf("unmarshaling Any not supported yet")
 		case "Duration":
-			ivStr := string(inputValue)
-			if ivStr == "null" {
-				target.Field(0).SetInt(0)
-				target.Field(1).SetInt(0)
-				return nil
-			}
-
-			unq, err := strconv.Unquote(ivStr)
+			unq, err := strconv.Unquote(string(inputValue))
 			if err != nil {
 				return err
 			}
@@ -681,14 +662,7 @@ func (u *Unmarshaler) unmarshalValue(target reflect.Value, inputValue json.RawMe
 			target.Field(1).SetInt(ns)
 			return nil
 		case "Timestamp":
-			ivStr := string(inputValue)
-			if ivStr == "null" {
-				target.Field(0).SetInt(0)
-				target.Field(1).SetInt(0)
-				return nil
-			}
-
-			unq, err := strconv.Unquote(ivStr)
+			unq, err := strconv.Unquote(string(inputValue))
 			if err != nil {
 				return err
 			}
@@ -751,14 +725,6 @@ func (u *Unmarshaler) unmarshalValue(target reflect.Value, inputValue json.RawMe
 
 	// Handle nested messages.
 	if targetType.Kind() == reflect.Struct {
-		if target.CanAddr() {
-			if m, ok := target.Addr().Interface().(interface {
-				UnmarshalJSON([]byte) error
-			}); ok {
-				return json.Unmarshal(inputValue, m)
-			}
-		}
-
 		var jsonFields map[string]json.RawMessage
 		if err := json.Unmarshal(inputValue, &jsonFields); err != nil {
 			return err

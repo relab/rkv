@@ -30,7 +30,7 @@
 
 all: clean install regenerate install tests errcheck vet
 
-buildserverall: clean install regenerate install tests vet js
+buildserverall: clean install regenerate install tests vet
 
 install:
 	go install ./proto
@@ -103,12 +103,6 @@ regenerate:
 	make -C test/proto3extension regenerate
 	make -C test/stdtypes regenerate
 	make -C test/data regenerate
-	make -C test/typedecl regenerate
-	make -C test/issue260 regenerate
-	make -C test/issue262 regenerate
-	make -C test/enumdecl regenerate
-	make -C test/typedecl_all regenerate
-	make -C test/enumdecl_all regenerate
 	make gofmt
 
 tests:
@@ -138,10 +132,6 @@ bench:
 
 contributors:
 	git log --format='%aN <%aE>' | sort -fu > CONTRIBUTORS
-
-js:
-	go get github.com/gopherjs/gopherjs
-	gopherjs build github.com/gogo/protobuf/protoc-gen-gogo
 
 update:
 	(cd protobuf && make update)

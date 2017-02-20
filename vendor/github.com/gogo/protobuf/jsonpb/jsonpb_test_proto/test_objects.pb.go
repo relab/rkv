@@ -569,7 +569,6 @@ var E_Complex_RealExtension = &proto.ExtensionDesc{
 	Field:         123,
 	Name:          "jsonpb.Complex.real_extension",
 	Tag:           "bytes,123,opt,name=real_extension,json=realExtension",
-	Filename:      "test_objects.proto",
 }
 
 type KnownTypes struct {
@@ -691,7 +690,6 @@ var E_Name = &proto.ExtensionDesc{
 	Field:         124,
 	Name:          "jsonpb.name",
 	Tag:           "bytes,124,opt,name=name",
-	Filename:      "test_objects.proto",
 }
 
 func init() {
