@@ -1,3 +1,57 @@
 * Raft Consensus with Gorums
 
-** TODO Server
+** rkvd
+   =rkvd= starts a key-value store backed by [[https://github.com/relab/raft][relab/raft]].
+
+*** Usage
+    #+BEGIN_EXAMPLE
+    Usage of rkvd:
+      -batch
+          enable batching (default true)
+      -cluster string
+          comma separated cluster servers (default ":9201")
+      -election duration
+          How long servers wait before starting an election (default 2s)
+      -heartbeat duration
+          How often a heartbeat should be sent (default 250ms)
+      -id uint
+          server ID
+      -maxappend uint
+          Max entries per AppendEntries message (default 5000)
+      -quiet
+          Silence log output
+      -recover
+          Recover from stable storage
+    #+END_EXAMPLE
+
+*** Example
+**** Separate machines
+      #+BEGIN_SRC shell
+      # Computer with IP1.
+      rkvd -id 1 -cluster IP1:9200,IP2:9200,IP3:9200
+
+      # Computer with IP2.
+      rkvd -id 2 -cluster IP1:9200,IP2:9200,IP3:9200
+
+      # Computer with IP3.
+      rkvd -id 3 -cluster IP1:9200,IP2:9200,IP3:9200
+
+      # Computer(s) with client(s).
+      ## Do something, i.e, run rkvctl.
+      #+END_SRC
+
+**** Same machine (same shell)
+      You can omit the ip to listen on localhost.
+
+      #+BEGIN_SRC shell
+      rkvd -id 1 -cluster :9201,:9202,:9203 &
+      rkvd -id 2 -cluster :9201,:9202,:9203 &
+      rkvd -id 3 -cluster :9201,:9202,:9203 &
+
+      ## Do something (preferably in another shell, unless you add -quiet), i.e, run rkvctl.
+      ## Stop cluster when you are done.
+      killall rkvd
+      #+END_SRC
+
+*** Connecting to the server:
+- [[https://github.com/relab/rkv/tree/master/cmd/rkvctl][rkvctl]]
