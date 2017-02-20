@@ -12,6 +12,8 @@ import (
 	cmdpb "github.com/relab/rkv/cmdpb"
 )
 
+// TODO Context timeout should depend on heartbeat setting.
+
 // Store is a key-value store backed by a map.
 type Store struct {
 	store map[string]string
@@ -20,8 +22,14 @@ type Store struct {
 	clients map[string]uint64
 
 	waiting map[string]chan interface{}
+	read    chan *readRequest
 
 	raft raft.Raft
+}
+
+type readRequest struct {
+	key   string
+	value chan<- string
 }
 
 // NewStore returns a newly initialized store.
@@ -30,6 +38,7 @@ func NewStore(raft raft.Raft) *Store {
 		store:   make(map[string]string),
 		clients: make(map[string]uint64),
 		waiting: make(map[string]chan interface{}),
+		read:    make(chan *readRequest),
 		raft:    raft,
 	}
 
@@ -41,6 +50,9 @@ func NewStore(raft raft.Raft) *Store {
 func (s *Store) run() {
 	for {
 		select {
+		case req := <-s.read:
+			req.value <- s.store[req.key]
+
 		case entries := <-s.raft.Committed():
 			for _, entry := range entries {
 				switch entry.EntryType {
@@ -137,27 +149,41 @@ func (s *Store) Register() (string, error) {
 	}
 }
 
-// Lookup gets a value from the map given a key. It returns a bool indicating if
-// the value was found or not. TODO We need to query the state machine. It's not
-// safe to just read the value.
-func (s *Store) Lookup(key string) (string, error) {
+// Lookup gets a value from the map given a key. If an error is returned, the
+// client should retry the same request. Note that if the key doesn't exist, the empty string is
+// returned.
+func (s *Store) Lookup(key string, allowStale bool) (string, error) {
 	// TODO Buffer reads to amortize cost.
-	err := s.raft.Read(context.TODO())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 
-	if err != nil {
-		return "", err
+	value := make(chan string, 1)
+
+	if !allowStale {
+		err := s.raft.Read(ctx)
+
+		if err != nil {
+			return "", err
+		}
 	}
 
-	// Empty string if not set. This depends on the application I think. We
-	// don't really care about the key being set or not.
-	value, _ := s.store[key]
+	r := readRequest{
+		key:   key,
+		value: value,
+	}
 
-	return value, nil
+	s.read <- &r
+
+	select {
+	case v := <-value:
+		return v, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
-// Insert inserts value in map given a key. It returns true if the value was
-// successfully inserted. False indicates that the client should retry, as we
-// cannot know if the value was inserted successfully or not.
+// Insert inserts value in map given a key. If an error is returned, the client
+// should retry the same request.
 func (s *Store) Insert(id string, seq uint64, key, value string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
