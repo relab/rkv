@@ -134,6 +134,10 @@ func raftError(w http.ResponseWriter, r *http.Request, err error) {
 
 		http.Redirect(w, r, "http://"+addr+r.URL.RequestURI(), http.StatusTemporaryRedirect)
 	default:
+		// TODO Document that this means the client should retry with
+		// the same server in 1s. We could probably do exponential
+		// back-off here.
+		w.Header().Set("Retry-After", "1")
 		http.Error(w, "503 Service Unavailable", http.StatusServiceUnavailable)
 	}
 }
