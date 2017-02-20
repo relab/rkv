@@ -133,14 +133,6 @@ func raftError(w http.ResponseWriter, r *http.Request, err error) {
 			host = "localhost"
 		}
 
-		// TODO Document that this service always uses Raft port - 100.
-		p, erri := strconv.Atoi(port)
-
-		if erri != nil {
-			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
-		}
-
-		port = strconv.Itoa(p - 100)
 		addr := net.JoinHostPort(host, port)
 
 		http.Redirect(w, r, "http://"+addr+r.URL.RequestURI(), http.StatusTemporaryRedirect)

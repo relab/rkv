@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/relab/raft/raftgorums"
 	"github.com/relab/rkv"
+	"github.com/soheilhy/cmux"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
@@ -22,7 +24,6 @@ func main() {
 	var (
 		id               = flag.Uint64("id", 0, "server ID")
 		cluster          = flag.String("cluster", ":9201", "comma separated cluster servers")
-		addr             = flag.String("addr", ":9200", "service address")
 		bench            = flag.Bool("quiet", false, "Silence log output")
 		recover          = flag.Bool("recover", false, "Recover from stable storage")
 		batch            = flag.Bool("batch", true, "enable batching")
@@ -67,7 +68,20 @@ func main() {
 		log.Fatal(err)
 	}
 
-	node := raftgorums.NewNode(&raftgorums.Config{
+	lis, err := net.Listen("tcp", nodes[*id-1])
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	m := cmux.New(lis)
+	grpcLis := m.Match(cmux.HTTP2HeaderField("content-type", "application/grpc"))
+	serviceLis := m.Match(cmux.Any())
+	go func() {
+		log.Fatal(m.Serve())
+	}()
+
+	node := raftgorums.NewNode(grpcLis, &raftgorums.Config{
 		ID:               *id,
 		Nodes:            nodes,
 		Batch:            *batch,
@@ -83,5 +97,5 @@ func main() {
 	}()
 
 	service := rkv.NewService(rkv.NewStore(node.Raft))
-	log.Fatal(http.ListenAndServe(*addr, service))
+	log.Fatal(http.Serve(serviceLis, service))
 }
