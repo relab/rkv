@@ -68,6 +68,23 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, value)
 
 		case http.MethodPut:
+			query := r.URL.Query()
+			idq := query["id"]
+			seqq := query["seq"]
+
+			if len(idq) != 1 || len(seqq) != 1 {
+				http.Error(w, "400 Bad Request", http.StatusBadRequest)
+				return
+			}
+
+			id := idq[0]
+			seq, err := strconv.ParseUint(seqq[0], 10, 64)
+
+			if err != nil {
+				http.Error(w, "400 Bad Request", http.StatusBadRequest)
+				return
+			}
+
 			value, err := ioutil.ReadAll(r.Body)
 
 			if err != nil {
@@ -75,18 +92,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			query := r.URL.Query()
-			// TODO Bound check.
-			id := query["id"][0]
-			seq := query["seq"][0]
-			sequ, err := strconv.ParseUint(seq, 10, 64)
-
-			if err != nil {
-				http.Error(w, "400 Bad Request", http.StatusBadRequest)
-				return
-			}
-
-			err = s.store.Insert(id, sequ, key, string(value))
+			err = s.store.Insert(key, string(value), id, seq)
 
 			if err != nil {
 				raftError(w, r, err)
@@ -134,6 +140,13 @@ func raftError(w http.ResponseWriter, r *http.Request, err error) {
 
 		http.Redirect(w, r, "http://"+addr+r.URL.RequestURI(), http.StatusTemporaryRedirect)
 	default:
+		if err == ErrSessionExpired {
+			// TODO Document that this means the session didn't
+			// exist or expired.
+			http.Error(w, "410 Gone", http.StatusGone)
+			return
+		}
+
 		// TODO Document that this means the client should retry with
 		// the same server in 1s. We could probably do exponential
 		// back-off here.

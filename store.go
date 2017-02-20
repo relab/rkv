@@ -2,8 +2,10 @@ package rkv
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 
 	"golang.org/x/net/context"
@@ -15,15 +17,17 @@ import (
 
 // TODO Context timeout should depend on heartbeat setting.
 
+// ErrSessionExpired indicates that the client session doesn't exist or has
+// already expired.
+var ErrSessionExpired = errors.New("session expired")
+
 // Store is a key-value store backed by a map.
 type Store struct {
-	store map[string]string
+	sync.RWMutex
 
-	nextID  uint64
+	store   map[string]string
 	clients map[string]uint64
-
 	waiting map[string]chan interface{}
-	read    chan *readRequest
 
 	raft raft.Raft
 }
@@ -39,7 +43,6 @@ func NewStore(raft raft.Raft) *Store {
 		store:   make(map[string]string),
 		clients: make(map[string]uint64),
 		waiting: make(map[string]chan interface{}),
-		read:    make(chan *readRequest),
 		raft:    raft,
 	}
 
@@ -51,9 +54,6 @@ func NewStore(raft raft.Raft) *Store {
 func (s *Store) run() {
 	for {
 		select {
-		case req := <-s.read:
-			req.value <- s.store[req.key]
-
 		case entries := <-s.raft.Committed():
 			for _, entry := range entries {
 				s.handleEntry(&entry)
@@ -63,6 +63,9 @@ func (s *Store) run() {
 }
 
 func (s *Store) handleEntry(entry *commonpb.Entry) {
+	s.Lock()
+	defer s.Unlock()
+
 	switch entry.EntryType {
 	case commonpb.EntryNormal:
 		if bytes.Equal(raft.NOOP, entry.Data) {
@@ -138,7 +141,9 @@ func (s *Store) Register() (string, error) {
 
 	done := make(chan interface{}, 1)
 	// TODO Store cmds under clientID, so they can be expired.
+	s.Lock()
 	s.waiting[cmdUID(&cmd)] = done
+	s.Unlock()
 
 	if err := s.raft.ProposeCmd(ctx, b); err != nil {
 		return "", err
@@ -157,10 +162,9 @@ func (s *Store) Register() (string, error) {
 // empty string is returned.
 func (s *Store) Lookup(key string, allowStale bool) (string, error) {
 	// TODO Buffer reads to amortize cost.
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-
-	value := make(chan string, 1)
 
 	if !allowStale {
 		err := s.raft.Read(ctx)
@@ -170,12 +174,13 @@ func (s *Store) Lookup(key string, allowStale bool) (string, error) {
 		}
 	}
 
-	r := readRequest{
-		key:   key,
-		value: value,
-	}
+	value := make(chan string, 1)
 
-	s.read <- &r
+	go func() {
+		s.RLock()
+		defer s.RUnlock()
+		value <- s.store[key]
+	}()
 
 	select {
 	case v := <-value:
@@ -187,7 +192,13 @@ func (s *Store) Lookup(key string, allowStale bool) (string, error) {
 
 // Insert inserts value in map given a key. If an error is returned, the client
 // should retry the same request.
-func (s *Store) Insert(id string, seq uint64, key, value string) error {
+func (s *Store) Insert(key, value, id string, seq uint64) error {
+	err := s.validate(id, seq)
+
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
@@ -207,7 +218,9 @@ func (s *Store) Insert(id string, seq uint64, key, value string) error {
 	}
 
 	done := make(chan interface{}, 1)
+	s.Lock()
 	s.waiting[cmdUID(&cmd)] = done
+	s.Unlock()
 
 	if err := s.raft.ProposeCmd(ctx, b); err != nil {
 		return err
@@ -219,4 +232,15 @@ func (s *Store) Insert(id string, seq uint64, key, value string) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (s *Store) validate(id string, seq uint64) error {
+	s.RLock()
+	defer s.RUnlock()
+
+	if oldSeq, ok := s.clients[id]; !ok || oldSeq != seq-1 {
+		return ErrSessionExpired
+	}
+
+	return nil
 }
