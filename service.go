@@ -56,55 +56,60 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		switch r.Method {
-		case http.MethodGet:
-			value, err := s.store.Lookup(key, false)
+		s.handleStore(w, r, key)
 
-			if err != nil {
-				raftError(w, r, err)
-				return
-			}
-
-			fmt.Fprintln(w, value)
-
-		case http.MethodPut:
-			query := r.URL.Query()
-			idq := query["id"]
-			seqq := query["seq"]
-
-			if len(idq) != 1 || len(seqq) != 1 {
-				http.Error(w, "400 Bad Request", http.StatusBadRequest)
-				return
-			}
-
-			id := idq[0]
-			seq, err := strconv.ParseUint(seqq[0], 10, 64)
-
-			if err != nil {
-				http.Error(w, "400 Bad Request", http.StatusBadRequest)
-				return
-			}
-
-			value, err := ioutil.ReadAll(r.Body)
-
-			if err != nil {
-				http.Error(w, "400 Bad Request", http.StatusBadRequest)
-				return
-			}
-
-			err = s.store.Insert(key, string(value), id, seq)
-
-			if err != nil {
-				raftError(w, r, err)
-				return
-			}
-
-			// TODO Change to StatusOK when we actually verify commitment.
-			w.WriteHeader(http.StatusAccepted)
-		}
 	default:
 		http.NotFound(w, r)
 		return
+	}
+}
+
+func (s *Service) handleStore(w http.ResponseWriter, r *http.Request, key string) {
+	switch r.Method {
+	case http.MethodGet:
+		value, err := s.store.Lookup(key, false)
+
+		if err != nil {
+			raftError(w, r, err)
+			return
+		}
+
+		fmt.Fprintln(w, value)
+
+	case http.MethodPut:
+		query := r.URL.Query()
+		idq := query["id"]
+		seqq := query["seq"]
+
+		if len(idq) != 1 || len(seqq) != 1 {
+			http.Error(w, "400 Bad Request", http.StatusBadRequest)
+			return
+		}
+
+		id := idq[0]
+		seq, err := strconv.ParseUint(seqq[0], 10, 64)
+
+		if err != nil {
+			http.Error(w, "400 Bad Request", http.StatusBadRequest)
+			return
+		}
+
+		value, err := ioutil.ReadAll(r.Body)
+
+		if err != nil {
+			http.Error(w, "400 Bad Request", http.StatusBadRequest)
+			return
+		}
+
+		err = s.store.Insert(key, string(value), id, seq)
+
+		if err != nil {
+			raftError(w, r, err)
+			return
+		}
+
+		// TODO Change to StatusOK when we actually verify commitment.
+		w.WriteHeader(http.StatusAccepted)
 	}
 }
 
