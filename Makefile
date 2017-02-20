@@ -5,6 +5,10 @@ all: install test
 install:
 	go install -v ./cmd/...
 
+.PHONY: proto
+proto:
+	protoc -I ../../../:. --gogofast_out=. cmdpb/cmd.proto
+
 .PHONY: test
 test:
 	go test ./cmd/... -v

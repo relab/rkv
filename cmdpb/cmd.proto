@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+package cmdpb;
+
+enum CmdType {
+  option (gogoproto.goproto_enum_prefix) = false;
+
+  Register = 0;
+  Insert   = 1;
+  Lookup   = 2;
+}
+
+message Cmd {
+  CmdType cmdType = 1;
+  string clientID = 2;
+  uint64 seq = 3;
+  string key = 4;
+  string value = 5;
+}
