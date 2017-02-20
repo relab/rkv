@@ -28,7 +28,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.Split(r.URL.Path, "/")
 
 	if len(path) < 2 {
-		http.Error(w, "400 Bad Request", http.StatusBadRequest)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
@@ -45,14 +45,14 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "store":
 		if len(path) != 3 {
-			http.Error(w, "400 Bad Request", http.StatusBadRequest)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
 
 		key := path[2]
 
 		if len(key) < 1 {
-			http.Error(w, "400 Bad Request", http.StatusBadRequest)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
 
@@ -82,7 +82,7 @@ func (s *Service) handleStore(w http.ResponseWriter, r *http.Request, key string
 		seqq := query["seq"]
 
 		if len(idq) != 1 || len(seqq) != 1 {
-			http.Error(w, "400 Bad Request", http.StatusBadRequest)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
 
@@ -90,14 +90,14 @@ func (s *Service) handleStore(w http.ResponseWriter, r *http.Request, key string
 		seq, err := strconv.ParseUint(seqq[0], 10, 64)
 
 		if err != nil {
-			http.Error(w, "400 Bad Request", http.StatusBadRequest)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
 
 		value, err := ioutil.ReadAll(r.Body)
 
 		if err != nil {
-			http.Error(w, "400 Bad Request", http.StatusBadRequest)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
 
@@ -119,13 +119,13 @@ func raftError(w http.ResponseWriter, r *http.Request, err error) {
 			// TODO Document that this means the client should
 			// change to a random server.
 			w.Header().Set("Retry-After", "-1")
-			http.Error(w, "503 Service Unavailable", http.StatusServiceUnavailable)
+			http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 		}
 
 		host, port, erri := net.SplitHostPort(err.LeaderAddr)
 
 		if erri != nil {
-			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 
 		if host == "" {
@@ -147,6 +147,6 @@ func raftError(w http.ResponseWriter, r *http.Request, err error) {
 		// the same server in 1s. We could probably do exponential
 		// back-off here.
 		w.Header().Set("Retry-After", "1")
-		http.Error(w, "503 Service Unavailable", http.StatusServiceUnavailable)
+		http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 	}
 }
