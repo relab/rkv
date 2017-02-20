@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"sync"
 	"time"
 
@@ -25,9 +26,12 @@ var ErrSessionExpired = errors.New("session expired")
 type Store struct {
 	sync.RWMutex
 
-	store   map[string]string
-	clients map[string]uint64
-	waiting map[string]chan interface{}
+	store       map[string]string
+	clients     map[string]uint64
+	waitCmd     map[string]chan interface{}
+	waitApplied map[uint64][]chan struct{}
+
+	applied uint64
 
 	raft raft.Raft
 }
@@ -40,10 +44,11 @@ type readRequest struct {
 // NewStore returns a newly initialized store.
 func NewStore(raft raft.Raft) *Store {
 	s := &Store{
-		store:   make(map[string]string),
-		clients: make(map[string]uint64),
-		waiting: make(map[string]chan interface{}),
-		raft:    raft,
+		store:       make(map[string]string),
+		clients:     make(map[string]uint64),
+		waitCmd:     make(map[string]chan interface{}),
+		waitApplied: make(map[uint64][]chan struct{}),
+		raft:        raft,
 	}
 
 	go s.run()
@@ -107,11 +112,21 @@ func (s *Store) handleEntry(entry *commonpb.Entry) {
 		}
 
 		cmdID := cmdUID(&cmd)
-		if ch, ok := s.waiting[cmdID]; ok {
+		if ch, ok := s.waitCmd[cmdID]; ok {
 			ch <- res
-			delete(s.waiting, cmdID)
+			delete(s.waitCmd, cmdID)
 		}
 	}
+
+	if waiting, ok := s.waitApplied[entry.Index]; ok {
+		for _, ch := range waiting {
+			close(ch)
+		}
+
+		delete(s.waitApplied, entry.Index)
+	}
+
+	s.applied = entry.Index
 }
 
 // randSeq is used to uniquely identify register command. There is a chance of a
@@ -142,7 +157,7 @@ func (s *Store) Register() (string, error) {
 	done := make(chan interface{}, 1)
 	// TODO Store cmds under clientID, so they can be expired.
 	s.Lock()
-	s.waiting[cmdUID(&cmd)] = done
+	s.waitCmd[cmdUID(&cmd)] = done
 	s.Unlock()
 
 	if err := s.raft.ProposeCmd(ctx, b); err != nil {
@@ -193,16 +208,14 @@ func (s *Store) Lookup(key string, allowStale bool) (string, error) {
 // Insert inserts value in map given a key. If an error is returned, the client
 // should retry the same request.
 func (s *Store) Insert(key, value, id string, seq uint64) error {
-	err := s.validate(id, seq)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	err := s.validate(ctx, id, seq)
 
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	// TODO Check if session is valid. Make it a function.
 
 	cmd := cmdpb.Cmd{
 		CmdType:  cmdpb.Insert,
@@ -219,7 +232,7 @@ func (s *Store) Insert(key, value, id string, seq uint64) error {
 
 	done := make(chan interface{}, 1)
 	s.Lock()
-	s.waiting[cmdUID(&cmd)] = done
+	s.waitCmd[cmdUID(&cmd)] = done
 	s.Unlock()
 
 	if err := s.raft.ProposeCmd(ctx, b); err != nil {
@@ -234,7 +247,31 @@ func (s *Store) Insert(key, value, id string, seq uint64) error {
 	}
 }
 
-func (s *Store) validate(id string, seq uint64) error {
+func (s *Store) validate(ctx context.Context, id string, seq uint64) error {
+	minIndex, err := strconv.ParseUint(id, 10, 64)
+
+	if err != nil {
+		return err
+	}
+
+	s.Lock()
+	ci := s.applied
+
+	if ci < minIndex {
+		done := make(chan struct{})
+
+		s.waitApplied[minIndex] = append(s.waitApplied[minIndex], done)
+		s.Unlock()
+
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	} else {
+		s.Unlock()
+	}
+
 	s.RLock()
 	defer s.RUnlock()
 
