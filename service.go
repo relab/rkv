@@ -76,10 +76,17 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 
 			query := r.URL.Query()
+			// TODO Bound check.
 			id := query["id"][0]
 			seq := query["seq"][0]
+			sequ, err := strconv.ParseUint(seq, 10, 64)
 
-			err = s.store.Insert(id, seq, key, string(value))
+			if err != nil {
+				http.Error(w, "400 Bad Request", http.StatusBadRequest)
+				return
+			}
+
+			err = s.store.Insert(id, sequ, key, string(value))
 
 			if err != nil {
 				raftError(w, r, err)
@@ -99,6 +106,7 @@ func raftError(w http.ResponseWriter, r *http.Request, err error) {
 	switch err := err.(type) {
 	case raft.ErrNotLeader:
 		// TODO Assumes a valid addr is returned.
+		// Try random server if err.LeaderAddr == "".
 		host, port, _ := net.SplitHostPort(err.LeaderAddr)
 
 		if host == "" {
@@ -115,6 +123,7 @@ func raftError(w http.ResponseWriter, r *http.Request, err error) {
 
 		addr := net.JoinHostPort(host, port)
 
+		// TODO Need to include query when redirecting.
 		http.Redirect(w, r, "http://"+addr+r.URL.Path, http.StatusTemporaryRedirect)
 	default:
 		http.Error(w, "503 Service Unavailable", http.StatusServiceUnavailable)
