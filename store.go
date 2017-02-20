@@ -92,18 +92,6 @@ func (s *Store) run() {
 	}
 }
 
-func (s *Store) waitOnResponse(ctx context.Context, cmd string) (interface{}, error) {
-	done := make(chan interface{}, 1)
-	s.waiting[cmd] = done
-
-	select {
-	case res := <-done:
-		return res, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
 func (s *Store) Register() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -116,20 +104,19 @@ func (s *Store) Register() (string, error) {
 		return "", err
 	}
 
+	done := make(chan interface{}, 1)
+	s.waiting[cmd.String()] = done
+
 	if err := s.raft.ProposeCmd(ctx, []byte(cmd.String())); err != nil {
 		return "", err
 	}
 
-	// There is a race condition on the command being committed before we
-	// actually start waiting. If that happens, the wait will timeout, and
-	// the client will retry.
-	res, err := s.waitOnResponse(ctx, cmd.String())
-
-	if err != nil {
-		return "", err
+	select {
+	case res := <-done:
+		return res.(string), nil
+	case <-ctx.Done():
+		return "", ctx.Err()
 	}
-
-	return res.(string), nil
 }
 
 // Lookup gets a value from the map given a key. It returns a bool indicating if
@@ -164,16 +151,17 @@ func (s *Store) Insert(id, seq, key, value string) error {
 		return err
 	}
 
+	done := make(chan interface{}, 1)
+	s.waiting[cmd.String()] = done
+
 	if err := s.raft.ProposeCmd(ctx, []byte(cmd.String())); err != nil {
 		return err
 	}
 
-	// There is a race condition on the command being committed before we
-	// actually start waiting. If that happens, the wait will timeout, and
-	// the client will retry.
-	if _, err := s.waitOnResponse(ctx, cmd.String()); err != nil {
-		return err
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-
-	return nil
 }
