@@ -56,56 +56,57 @@ func (s *Store) run() {
 
 		case entries := <-s.raft.Committed():
 			for _, entry := range entries {
-				switch entry.EntryType {
-				case commonpb.EntryNormal:
-					if bytes.Equal(raft.NOOP, entry.Data) {
-						continue
-					}
-
-					var cmd cmdpb.Cmd
-					err := cmd.Unmarshal(entry.Data)
-
-					if err != nil {
-						// TODO Ignore malformed requests. Log?
-						continue
-					}
-
-					var res interface{}
-
-					switch cmd.CmdType {
-					case cmdpb.Register:
-						id := fmt.Sprintf("%d", entry.Index)
-						res = id
-						if _, ok := s.clients[id]; ok {
-							// Don't reset sequence
-							// number if we receive
-							// a duplicate.
-							break
-						}
-						s.clients[id] = 0
-					case cmdpb.Insert:
-						// TODO We need to return
-						// ErrSessionExpired, when the
-						// session is expired. TODO If
-						// we see seq > oldseq + 1, we
-						// need to deal with that, i.e,
-						// we might have stale data?
-						if oldseq := s.clients[cmd.ClientID]; oldseq >= cmd.Seq {
-							// Already applied.
-							break
-						}
-
-						s.clients[cmd.ClientID] = cmd.Seq
-						s.store[cmd.Key] = cmd.Value
-					}
-
-					cmdID := cmdUID(&cmd)
-					if ch, ok := s.waiting[cmdID]; ok {
-						ch <- res
-						delete(s.waiting, cmdID)
-					}
-				}
+				s.handleEntry(&entry)
 			}
+		}
+	}
+}
+
+func (s *Store) handleEntry(entry *commonpb.Entry) {
+	switch entry.EntryType {
+	case commonpb.EntryNormal:
+		if bytes.Equal(raft.NOOP, entry.Data) {
+			return
+		}
+
+		var cmd cmdpb.Cmd
+		err := cmd.Unmarshal(entry.Data)
+
+		if err != nil {
+			// TODO Ignore malformed requests. Log?
+			return
+		}
+
+		var res interface{}
+
+		switch cmd.CmdType {
+		case cmdpb.Register:
+			id := fmt.Sprintf("%d", entry.Index)
+			res = id
+			if _, ok := s.clients[id]; ok {
+				// Don't reset sequence number if we receive a
+				// duplicate.
+				break
+			}
+			s.clients[id] = 0
+		case cmdpb.Insert:
+			// TODO We need to return ErrSessionExpired, when the
+			// session is expired. TODO If we see seq > oldseq + 1,
+			// we need to deal with that, i.e, we might have stale
+			// data?
+			if oldseq := s.clients[cmd.ClientID]; oldseq >= cmd.Seq {
+				// Already applied.
+				break
+			}
+
+			s.clients[cmd.ClientID] = cmd.Seq
+			s.store[cmd.Key] = cmd.Value
+		}
+
+		cmdID := cmdUID(&cmd)
+		if ch, ok := s.waiting[cmdID]; ok {
+			ch <- res
+			delete(s.waiting, cmdID)
 		}
 	}
 }
@@ -152,8 +153,8 @@ func (s *Store) Register() (string, error) {
 }
 
 // Lookup gets a value from the map given a key. If an error is returned, the
-// client should retry the same request. Note that if the key doesn't exist, the empty string is
-// returned.
+// client should retry the same request. Note that if the key doesn't exist, the
+// empty string is returned.
 func (s *Store) Lookup(key string, allowStale bool) (string, error) {
 	// TODO Buffer reads to amortize cost.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
