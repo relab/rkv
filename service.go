@@ -123,8 +123,7 @@ func raftError(w http.ResponseWriter, r *http.Request, err error) {
 
 		addr := net.JoinHostPort(host, port)
 
-		// TODO Need to include query when redirecting.
-		http.Redirect(w, r, "http://"+addr+r.URL.Path, http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "http://"+addr+r.URL.RequestURI(), http.StatusTemporaryRedirect)
 	default:
 		http.Error(w, "503 Service Unavailable", http.StatusServiceUnavailable)
 	}
