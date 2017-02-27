@@ -4,8 +4,6 @@ import (
 	"fmt"
 
 	"golang.org/x/net/context"
-
-	commonpb "github.com/relab/raft/raftpb"
 )
 
 // NOOP is used in the data field for a no-op entry.
@@ -29,7 +27,7 @@ type Raft interface {
 	// ProposeCmd proposes a command. Blocks until Raft handles the message
 	// or the context is canceled, i.e., server is busy. Immediately returns
 	// an ErrNotLeader error if server isn't the leader.
-	ProposeCmd(context.Context, []byte) error
+	ProposeCmd(context.Context, []byte) (Future, error)
 
 	// Read blocks until Raft has had a successful round of heartbeats in
 	// its current term. A successful call to Read allows read-only queries
@@ -45,10 +43,6 @@ type Raft interface {
 	// the message or the context is canceled, i.e., server is busy.
 	// Immediately returns an ErrNotLeader error if server isn't the leader.
 	ProposeConf(context.Context, TODOConfChange) error
-
-	// Committed returns a stream of committed commands which should be
-	// applied to the applications state machine.
-	Committed() <-chan []commonpb.Entry
 }
 
 type TODOConfChange struct{}
