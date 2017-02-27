@@ -1,152 +1,113 @@
-package rkv
+package main
 
 import (
 	"fmt"
-	"io/ioutil"
-	"net"
-	"net/http"
-	"strconv"
-	"strings"
+
+	"golang.org/x/net/context"
 
 	"github.com/relab/raft"
+	commonpb "github.com/relab/raft/raftpb"
+	"github.com/relab/rkv/rkvpb"
 )
 
 // Service exposes the Store api as a http service.
 type Service struct {
-	store *Store
+	store map[string]string
+
+	raft raft.Raft
 }
 
 // NewService creates a new Service backed by store.
-func NewService(store *Store) *Service {
+func NewService() *Service {
 	return &Service{
-		store: store,
+		store: make(map[string]string),
 	}
 }
 
-// ServeHTTP implements the http.Handler interface.
-func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := strings.Split(r.URL.Path, "/")
+func (s *Service) SetRaft(raft raft.Raft) {
+	s.raft = raft
+}
 
-	if len(path) < 2 {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
-	}
-
-	switch path[1] {
-	case "register":
-		id, err := s.store.Register()
+func (s *Service) Apply(entry *commonpb.Entry) interface{} {
+	switch entry.EntryType {
+	case commonpb.EntryNormal:
+		var cmd rkvpb.Cmd
+		err := cmd.Unmarshal(entry.Data)
 
 		if err != nil {
-			raftError(w, r, err)
-			return
+			panic(err)
 		}
 
-		fmt.Fprintln(w, id)
-		return
-	case "store":
-		if len(path) != 3 {
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-			return
-		}
-
-		key := path[2]
-
-		if len(key) < 1 {
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-			return
-		}
-
-		s.handleStore(w, r, key)
-
+		return s.applyStore(&cmd)
+	case commonpb.EntryConfChange:
+		panic("not implemented yet")
 	default:
-		http.NotFound(w, r)
-		return
+		panic(fmt.Sprintf("got unknown entry type: %v", entry.EntryType))
 	}
 }
 
-func (s *Service) handleStore(w http.ResponseWriter, r *http.Request, key string) {
-	switch r.Method {
-	case http.MethodGet:
-		value, err := s.store.Lookup(key, false)
-
+func (s *Service) applyStore(cmd *rkvpb.Cmd) interface{} {
+	switch cmd.CmdType {
+	case rkvpb.Register:
+		panic("not implemented yet")
+	case rkvpb.Insert:
+		var req rkvpb.InsertRequest
+		err := req.Unmarshal(cmd.Data)
 		if err != nil {
-			raftError(w, r, err)
-			return
+			panic(err)
 		}
 
-		fmt.Fprintln(w, value)
-
-	case http.MethodPut:
-		query := r.URL.Query()
-		idq := query["id"]
-		seqq := query["seq"]
-
-		if len(idq) != 1 || len(seqq) != 1 {
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-			return
-		}
-
-		id := idq[0]
-		seq, err := strconv.ParseUint(seqq[0], 10, 64)
-
+		s.store[req.Key] = req.Value
+		return true
+	case rkvpb.Lookup:
+		var req rkvpb.LookupRequest
+		err := req.Unmarshal(cmd.Data)
 		if err != nil {
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-			return
+			panic(err)
 		}
 
-		value, err := ioutil.ReadAll(r.Body)
-
-		if err != nil {
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-			return
-		}
-
-		err = s.store.Insert(key, string(value), id, seq)
-
-		if err != nil {
-			raftError(w, r, err)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}
-}
-
-func raftError(w http.ResponseWriter, r *http.Request, err error) {
-	switch err := err.(type) {
-	case raft.ErrNotLeader:
-		if err.LeaderAddr == "" {
-			// TODO Document that this means the client should
-			// change to a random server.
-			w.Header().Set("Retry-After", "-1")
-			http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
-		}
-
-		host, port, erri := net.SplitHostPort(err.LeaderAddr)
-
-		if erri != nil {
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		}
-
-		if host == "" {
-			host = "localhost"
-		}
-
-		addr := net.JoinHostPort(host, port)
-
-		http.Redirect(w, r, "http://"+addr+r.URL.RequestURI(), http.StatusTemporaryRedirect)
+		return s.store[req.Key]
 	default:
-		if err == ErrSessionExpired {
-			// TODO Document that this means the session didn't
-			// exist or expired.
-			http.Error(w, "410 Gone", http.StatusGone)
-			return
-		}
-
-		// TODO Document that this means the client should retry with
-		// the same server in 1s. We could probably do exponential
-		// back-off here.
-		w.Header().Set("Retry-After", "1")
-		http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+		panic(fmt.Sprintf("got unknown cmd type: %v", cmd.CmdType))
 	}
+}
+
+func (s *Service) Register(ctx context.Context, req *rkvpb.RegisterRequest) (*rkvpb.RegisterResponse, error) {
+	return &rkvpb.RegisterResponse{ClientID: 5}, nil
+}
+
+func (s *Service) Insert(ctx context.Context, req *rkvpb.InsertRequest) (*rkvpb.InsertResponse, error) {
+	reqb, err := req.Marshal()
+
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := &rkvpb.Cmd{
+		CmdType: rkvpb.Insert,
+		Data:    reqb,
+	}
+
+	b, err := cmd.Marshal()
+
+	if err != nil {
+		return nil, err
+	}
+
+	future, err := s.raft.ProposeCmd(ctx, b)
+
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case <-future.Result():
+		return &rkvpb.InsertResponse{Ok: true}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (s *Service) Lookup(ctx context.Context, req *rkvpb.LookupRequest) (*rkvpb.LookupResponse, error) {
+	return &rkvpb.LookupResponse{Value: s.store[req.Key]}, nil
 }

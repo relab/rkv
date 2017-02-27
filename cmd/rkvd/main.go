@@ -7,14 +7,12 @@ import (
 	"log"
 	"math/rand"
 	"net"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/relab/raft/raftgorums"
-	"github.com/relab/rkv"
-	"github.com/soheilhy/cmux"
+	"github.com/relab/rkv/rkvpb"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
@@ -74,14 +72,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	m := cmux.New(lis)
-	grpcLis := m.Match(cmux.HTTP2HeaderField("content-type", "application/grpc"))
-	serviceLis := m.Match(cmux.Any())
-	go func() {
-		log.Fatal(m.Serve())
-	}()
+	grpcServer := grpc.NewServer()
 
-	node := raftgorums.NewNode(grpcLis, &raftgorums.Config{
+	service := NewService()
+	node := raftgorums.NewNode(grpcServer, service, &raftgorums.Config{
 		ID:               *id,
 		Nodes:            nodes,
 		Batch:            *batch,
@@ -91,11 +85,13 @@ func main() {
 		MaxAppendEntries: *maxAppendEntries,
 		Logger:           log.New(os.Stderr, "raft", log.LstdFlags),
 	})
+	service.SetRaft(node.Raft)
+
+	rkvpb.RegisterRKVServer(grpcServer, service)
 
 	go func() {
-		log.Fatal(node.Run())
+		log.Fatal(grpcServer.Serve(lis))
 	}()
 
-	service := rkv.NewService(rkv.NewStore(node.Raft))
-	log.Fatal(http.Serve(serviceLis, service))
+	log.Fatal(node.Run())
 }

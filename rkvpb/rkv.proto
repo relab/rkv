@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+package rkvpb;
+
+option (gogoproto.goproto_enum_prefix_all) = false;
+option (gogoproto.goproto_getters_all)     = false;
+
+service RKV {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Insert(InsertRequest) returns (InsertResponse);
+  rpc Lookup(LookupRequest) returns (LookupResponse);
+}
+
+enum CmdType {
+  Register = 0;
+  Insert   = 1;
+  Lookup   = 2;
+}
+
+message Cmd {
+  CmdType cmdType = 1;
+  bytes data      = 2;
+}
+
+message RegisterRequest {}
+
+message RegisterResponse {
+  uint64 clientID = 1;
+}
+
+message InsertRequest {
+  uint64 clientID  = 1;
+  uint64 clientSeq = 2;
+
+  string key   = 3;
+  string value = 4;
+}
+
+message InsertResponse {
+  bool ok = 1;
+}
+
+message LookupRequest {
+  string key = 1;
+}
+
+message LookupResponse {
+  string value = 1;
+}

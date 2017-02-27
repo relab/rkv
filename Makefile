@@ -11,7 +11,7 @@ protoc:
 
 .PHONY: proto
 proto: protoc
-	protoc -I ../../../:. --gogofaster_out=. cmdpb/cmd.proto
+	protoc -I ../../../:. --gogofaster_out=plugins=grpc:. rkvpb/rkv.proto
 
 .PHONY: test
 test:
