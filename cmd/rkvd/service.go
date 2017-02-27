@@ -103,7 +103,7 @@ func (s *Service) Lookup(ctx context.Context, req *rkvpb.LookupRequest) (*rkvpb.
 		return nil, err
 	}
 
-	future, err := s.raft.ProposeCmd(ctx, b)
+	future, err := s.raft.ReadCmd(ctx, b)
 
 	if err != nil {
 		return nil, err
