@@ -74,8 +74,7 @@ func main() {
 
 	grpcServer := grpc.NewServer()
 
-	service := NewService()
-	node := raftgorums.NewNode(grpcServer, service, &raftgorums.Config{
+	node := raftgorums.NewNode(grpcServer, NewStore(), &raftgorums.Config{
 		ID:               *id,
 		Nodes:            nodes,
 		Batch:            *batch,
@@ -85,8 +84,8 @@ func main() {
 		MaxAppendEntries: *maxAppendEntries,
 		Logger:           log.New(os.Stderr, "raft", log.LstdFlags),
 	})
-	service.SetRaft(node.Raft)
 
+	service := NewService(node.Raft)
 	rkvpb.RegisterRKVServer(grpcServer, service)
 
 	go func() {
