@@ -46,6 +46,14 @@ func main() {
 
 	c := rkvpb.NewRKVClient(cc)
 
+	res, err := c.Register(context.Background(), &rkvpb.RegisterRequest{})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	clientID := res.ClientID
+
 	var wg sync.WaitGroup
 
 	const writes = 10000
@@ -54,8 +62,10 @@ func main() {
 		wg.Add(1)
 		go func(i int) {
 			_, err := c.Insert(context.Background(), &rkvpb.InsertRequest{
-				Key:   fmt.Sprintf("key%d", 1),
-				Value: fmt.Sprintf("value%d", 1),
+				ClientID:  clientID,
+				ClientSeq: uint64(i + 1),
+				Key:       fmt.Sprintf("key%d", i),
+				Value:     fmt.Sprintf("value%d", i),
 			})
 
 			if err != nil {
@@ -72,14 +82,14 @@ func main() {
 		wg.Add(1)
 		go func(i int) {
 			res, err := c.Lookup(context.Background(), &rkvpb.LookupRequest{
-				Key: fmt.Sprintf("key%d", 1),
+				Key: fmt.Sprintf("key%d", i),
 			})
 
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			expected := fmt.Sprintf("value%d", 1)
+			expected := fmt.Sprintf("value%d", i)
 
 			if res.Value != expected {
 				panic(fmt.Sprintf("got %s wanted %s\n", res.Value, expected))
