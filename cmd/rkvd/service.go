@@ -12,32 +12,6 @@ import (
 	"github.com/relab/rkv/rkvpb"
 )
 
-type Session struct {
-	seq     uint64
-	pending *Cmds
-}
-
-func (s *Session) Push(req *rkvpb.InsertRequest) {
-	heap.Push(s.pending, req)
-}
-
-func (s *Session) HasNext() bool {
-	if len(*s.pending) == 0 {
-		return false
-	}
-
-	if (*s.pending)[0].ClientSeq != s.seq+1 {
-		return false
-	}
-
-	return true
-}
-
-func (s *Session) Pop() *rkvpb.InsertRequest {
-	s.seq++
-	return heap.Pop(s.pending).(*rkvpb.InsertRequest)
-}
-
 // Service exposes a key-value store as a gRPC service.
 type Service struct {
 	store    map[string]string
@@ -213,29 +187,4 @@ func (s *Service) Lookup(ctx context.Context, req *rkvpb.LookupRequest) (*rkvpb.
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-}
-
-type Cmds []*rkvpb.InsertRequest
-
-func (c Cmds) Len() int {
-	return len(c)
-}
-
-func (c Cmds) Less(i, j int) bool {
-	return c[i].ClientSeq < c[j].ClientSeq
-}
-
-func (c Cmds) Swap(i, j int) {
-	c[i].ClientSeq, c[j].ClientSeq = c[j].ClientSeq, c[i].ClientSeq
-}
-
-func (c *Cmds) Pop() interface{} {
-	n := len(*c)
-	x := (*c)[n-1]
-	*c = (*c)[:n-1]
-	return x
-}
-
-func (c *Cmds) Push(x interface{}) {
-	*c = append(*c, x.(*rkvpb.InsertRequest))
 }
