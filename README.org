@@ -5,7 +5,7 @@ Consensus Algorithm]]. One backed by the [[https://github.com/relab/gorums][Goru
 
 ** Project layout
 
-   - github.com/relab/rkv :: Key-value store code.
+   - github.com/relab/rkv :: Common code.
    - github.com/relab/rkv/cmd/rkvd :: Key-value store server.
    - github.com/relab/rkv/cmd/rkvctl :: key-value store client.
 

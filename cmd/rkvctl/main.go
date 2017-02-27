@@ -21,6 +21,8 @@ func main() {
 
 	var (
 		cluster = flag.String("cluster", ":9201,:9202,:9203", "comma separated cluster servers")
+		leader  = flag.Int("leader", 0, "index of leader in cluster")
+		ops     = flag.Int("ops", 10, "number of write and read operations (total = 1 + 2*ops)")
 	)
 
 	flag.Parse()
@@ -34,7 +36,7 @@ func main() {
 	}
 
 	cc, err := grpc.Dial(
-		servers[0],
+		servers[*leader],
 		grpc.WithBlock(),
 		grpc.WithInsecure(),
 		grpc.WithTimeout(1*time.Second),
@@ -56,9 +58,7 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	const writes = 10000
-
-	for i := 0; i < writes; i++ {
+	for i := 0; i < *ops; i++ {
 		wg.Add(1)
 		go func(i int) {
 			_, err := c.Insert(context.Background(), &rkvpb.InsertRequest{
@@ -78,7 +78,7 @@ func main() {
 
 	wg.Wait()
 
-	for i := 0; i < writes; i++ {
+	for i := 0; i < *ops; i++ {
 		wg.Add(1)
 		go func(i int) {
 			res, err := c.Lookup(context.Background(), &rkvpb.LookupRequest{

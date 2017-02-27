@@ -1,28 +1,26 @@
 * Raft Consensus with Gorums
 
 ** rkvctl
-  =rkvctl= connects to a cluster through the =-cluster= argument. Running the
-  client will start =-clients= connections, which will execute =32= insert
-  requests each in parallel, then verify the inserts with =32= reads each. Each
-  connection is synchronous, i.e., it waits for a response before sending a new
-  request. If a client sends a requests to a follower, the request is forwarded
-  to the leader. If the client can't connect to a server, it will try a new one
-  at random from the cluster.
+   =rkvctl= connects to the =-leader= of =-cluster=, executing asynchronously
+   =-ops= write and read requests, respectively. The program will panic on
+   inconsistencies.
 
 *** Usage
     #+BEGIN_EXAMPLE
     Usage of rkvctl:
-      -clients int
-          number of clients (default 1)
       -cluster string
           comma separated cluster servers (default ":9201,:9202,:9203")
+      -leader int
+          index of leader in cluster
+      -ops int
+          number of write and read operations (total = 1 + 2*ops) (default 10)
     #+END_EXAMPLE
 
 *** Example
-    After a cluster is started execute the following command and wait =2*time= seconds for the output.
+    After a cluster is started execute the following command and wait for it to finish.
     #+BEGIN_SRC shell
-    rkvctl -clients 100
+    rkvctl -leader 1 -ops 10000
     #+END_SRC
 
 *** For starting a cluster to interact with:
-- [[https://github.com/relab/rkv/tree/master/cmd/rkvd][rkvd]]
+    - [[https://github.com/relab/rkv/tree/master/cmd/rkvd][rkvd]]
