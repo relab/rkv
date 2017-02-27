@@ -1,10 +1,14 @@
 package: github.com/relab/rkv
 import:
+- package: github.com/gogo/protobuf
+  version: ~0.3.0
+  subpackages:
+  - gogoproto
+  - proto
 - package: github.com/relab/raft
   subpackages:
   - raftgorums
-  - raftgorums/gorumspb
-  - raftgorums/raftpb
+  - raftpb
 - package: golang.org/x/net
   subpackages:
   - context
@@ -12,5 +16,3 @@ import:
   version: ~1.0.5
   subpackages:
   - grpclog
-- package: github.com/soheilhy/cmux
-  version: ~0.1.2
