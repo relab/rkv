@@ -82,7 +82,7 @@ func main() {
 		ElectionTimeout:  *electionTimeout,
 		HeartbeatTimeout: *heartbeatTimeout,
 		MaxAppendEntries: *maxAppendEntries,
-		Logger:           log.New(os.Stderr, "raft", log.LstdFlags),
+		Logger:           log.New(os.Stderr, "raft| ", log.LstdFlags),
 	})
 
 	service := NewService(node.Raft)
