@@ -432,12 +432,11 @@ func (r *Raft) cmdToFuture(cmd []byte) (*raft.EntryFuture, error) {
 	r.Lock()
 	state := r.state
 	leader := r.leader
-	leaderAddr := r.addrs[leader-1]
 	term := r.currentTerm
 	r.Unlock()
 
 	if state != Leader {
-		return nil, raft.ErrNotLeader{Leader: leader, LeaderAddr: leaderAddr}
+		return nil, raft.ErrNotLeader{Leader: leader}
 	}
 
 	entry := &commonpb.Entry{
@@ -640,6 +639,8 @@ func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 
 		return
 	}
+
+	r.preElection = true
 
 	// #C7 If election timeout elapses: start new election.
 	// This will happened if we don't receive enough replies in time. Or we lose the election but don't see a higher term number.
