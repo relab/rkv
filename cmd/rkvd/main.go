@@ -25,9 +25,9 @@ func main() {
 		bench            = flag.Bool("quiet", false, "Silence log output")
 		recover          = flag.Bool("recover", false, "Recover from stable storage")
 		batch            = flag.Bool("batch", true, "enable batching")
-		electionTimeout  = flag.Duration("election", 2*time.Second, "How long servers wait before starting an election")
-		heartbeatTimeout = flag.Duration("heartbeat", 250*time.Millisecond, "How often a heartbeat should be sent")
-		maxAppendEntries = flag.Uint64("maxappend", 5000, "Max entries per AppendEntries message")
+		electionTimeout  = flag.Duration("election", time.Second, "How long servers wait before starting an election")
+		heartbeatTimeout = flag.Duration("heartbeat", 50*time.Millisecond, "How often a heartbeat should be sent")
+		maxAppendEntries = flag.Uint64("maxappend", 10000, "Max entries per AppendEntries message")
 	)
 
 	flag.Parse()
