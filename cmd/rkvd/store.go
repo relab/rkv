@@ -15,7 +15,7 @@ type KeyValue struct {
 }
 
 type Client struct {
-	ClientID string
+	ClientID uint64
 	Seq      uint64
 }
 
@@ -103,7 +103,7 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 			s.pendingSeqs[req.ClientID] = newSeq
 
 			if err := txn.Insert("sessions", &Client{
-				ClientID: fmt.Sprintf("%d", req.ClientID),
+				ClientID: req.ClientID,
 				Seq:      newSeq,
 			}); err != nil {
 				panic("Could not insert updated sequence: " + err.Error())
