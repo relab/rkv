@@ -1,5 +1,5 @@
-hash: e61a50a3a3b4068c4d4d25fd81b5501d0ce66de8bafc46b45b44363d15869bf5
-updated: 2017-03-03T12:41:07.964403618+01:00
+hash: e6f8900d67ad402b4e3a1213a0f982c609e58033b8347933e57d04d69c84c698
+updated: 2017-03-05T20:59:58.876590587+01:00
 imports:
 - name: github.com/boltdb/bolt
   version: e9cf4fae01b5a8ff89d0ec6b32f0d9c9f79aefdd
@@ -13,6 +13,12 @@ imports:
   version: 69b215d01a5606c843240eab4937eab3acee6530
   subpackages:
   - proto
+- name: github.com/hashicorp/go-immutable-radix
+  version: 30664b879c9a771d8d50b137ab80ee0748cb2fcc
+- name: github.com/hashicorp/golang-lru
+  version: 0a025b7e63adc15a622f29b0b2c4c3848243bbf6
+  subpackages:
+  - simplelru
 - name: github.com/relab/gorums
   version: 8ed594959a32dc96b3580859f3350a7599c45cc1
 - name: github.com/relab/raft
@@ -23,7 +29,7 @@ imports:
   - raftgorums/raftpb
   - raftpb
 - name: golang.org/x/net
-  version: 906cda9512f77671ab44f8c8563b13a8e707b230
+  version: d379faa25cbdc04d653984913a2ceb43b0bc46d7
   subpackages:
   - context
   - http2
@@ -33,7 +39,7 @@ imports:
   - lex/httplex
   - trace
 - name: golang.org/x/sys
-  version: 76cc09b634294339fa19ec41b5f2a0b3932cea8b
+  version: e48874b42435b4347fc52bdee0424a52abc974d7
   subpackages:
   - unix
 - name: google.golang.org/grpc

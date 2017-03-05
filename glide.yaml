@@ -5,6 +5,7 @@ import:
   subpackages:
   - gogoproto
   - proto
+- package: github.com/hashicorp/go-immutable-radix
 - package: github.com/relab/raft
   subpackages:
   - raftgorums
