@@ -91,7 +91,7 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 		if len(toApply) > 0 {
 			txn := s.db.Txn(true)
 			for _, r := range toApply {
-				if err := txn.Insert("kvs", &KeyValue{
+				if err := txn.Insert(KeyValueStore, &KeyValue{
 					r.Key,
 					r.Value,
 				}); err != nil {
@@ -102,7 +102,7 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 			newSeq := oldSeq + uint64(len(toApply))
 			s.pendingSeqs[req.ClientID] = newSeq
 
-			if err := txn.Insert("sessions", &Client{
+			if err := txn.Insert(SessionStore, &Client{
 				ClientID: req.ClientID,
 				Seq:      newSeq,
 			}); err != nil {
@@ -122,7 +122,7 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 		txn := s.db.Txn(false)
 		defer txn.Abort()
 
-		raw, err := txn.First("kvs", "id", req.Key)
+		raw, err := txn.First(KeyValueStore, Identifier, req.Key)
 
 		if err != nil {
 			panic("Could not lookup '" + req.Key + "': " + err.Error())

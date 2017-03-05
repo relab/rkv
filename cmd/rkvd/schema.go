@@ -36,13 +36,22 @@ func (s *Uint64Index) FromArgs(args ...interface{}) ([]byte, error) {
 	return []byte(fmt.Sprintf("%d\x00", args[0])), nil
 }
 
+// Schema constants.
+const (
+	KeyValueStore = "kvs"
+	SessionStore  = "ss"
+	RequestStore  = "rs"
+
+	Identifier = "id"
+)
+
 var schema = &memdb.DBSchema{
 	Tables: map[string]*memdb.TableSchema{
-		"kvs": &memdb.TableSchema{
-			Name: "kvs",
+		KeyValueStore: &memdb.TableSchema{
+			Name: KeyValueStore,
 			Indexes: map[string]*memdb.IndexSchema{
-				"id": &memdb.IndexSchema{
-					Name:   "id",
+				Identifier: &memdb.IndexSchema{
+					Name:   Identifier,
 					Unique: true,
 					Indexer: &memdb.StringFieldIndex{
 						Field: "Key",
@@ -50,11 +59,11 @@ var schema = &memdb.DBSchema{
 				},
 			},
 		},
-		"sessions": &memdb.TableSchema{
-			Name: "sessions",
+		SessionStore: &memdb.TableSchema{
+			Name: SessionStore,
 			Indexes: map[string]*memdb.IndexSchema{
-				"id": &memdb.IndexSchema{
-					Name:   "id",
+				Identifier: &memdb.IndexSchema{
+					Name:   Identifier,
 					Unique: true,
 					Indexer: &Uint64Index{
 						Field: "ClientID",
@@ -62,11 +71,11 @@ var schema = &memdb.DBSchema{
 				},
 			},
 		},
-		"requests": &memdb.TableSchema{
-			Name: "requests",
+		RequestStore: &memdb.TableSchema{
+			Name: RequestStore,
 			Indexes: map[string]*memdb.IndexSchema{
-				"id": &memdb.IndexSchema{
-					Name:   "id",
+				Identifier: &memdb.IndexSchema{
+					Name:   Identifier,
 					Unique: true,
 					Indexer: &memdb.CompoundIndex{
 						Indexes: []memdb.Indexer{
