@@ -91,23 +91,19 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 		if len(toApply) > 0 {
 			txn := s.db.Txn(true)
 			for _, r := range toApply {
-				if err := txn.Insert(KeyValueStore, &KeyValue{
+				InsertKeyValue(txn, &KeyValue{
 					r.Key,
 					r.Value,
-				}); err != nil {
-					panic("Could not insert key-value: " + err.Error())
-				}
+				})
 			}
 
 			newSeq := oldSeq + uint64(len(toApply))
 			s.pendingSeqs[req.ClientID] = newSeq
 
-			if err := txn.Insert(SessionStore, &Client{
+			InsertSession(txn, &Client{
 				ClientID: req.ClientID,
 				Seq:      newSeq,
-			}); err != nil {
-				panic("Could not insert updated sequence: " + err.Error())
-			}
+			})
 			txn.Commit()
 		}
 
@@ -122,13 +118,7 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 		txn := s.db.Txn(false)
 		defer txn.Abort()
 
-		raw, err := txn.First(KeyValueStore, Identifier, req.Key)
-
-		if err != nil {
-			panic("Could not lookup '" + req.Key + "': " + err.Error())
-		}
-
-		return raw.(*KeyValue).Value
+		return LookupKeyValue(txn, req.Key).Value
 	default:
 		panic(fmt.Sprintf("got unknown cmd type: %v", cmd.CmdType))
 	}
