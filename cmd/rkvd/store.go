@@ -3,6 +3,7 @@ package main
 import (
 	"container/heap"
 	"fmt"
+	"reflect"
 	"strconv"
 
 	"github.com/hashicorp/go-immutable-radix"
@@ -71,9 +72,12 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 			panic(fmt.Sprintf("clientID %v not found", req.ClientID))
 		}
 
-		// TODO Check type and panic.
+		oldSeq, ok := raw.(uint64)
 
-		oldSeq := raw.(uint64)
+		if !ok {
+			panic(fmt.Sprintf("expected uint64 got %s", reflect.TypeOf(raw)))
+		}
+
 		nextSeq := oldSeq + 1
 
 		txn := s.kvs.Txn()
@@ -111,9 +115,13 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 			return "(none)"
 		}
 
-		// TODO Check type and panic.
+		val, ok := raw.(string)
 
-		return raw.(string)
+		if !ok {
+			panic(fmt.Sprintf("expected string got %s", reflect.TypeOf(raw)))
+		}
+
+		return val
 	default:
 		panic(fmt.Sprintf("got unknown cmd type: %v", cmd.CmdType))
 	}
