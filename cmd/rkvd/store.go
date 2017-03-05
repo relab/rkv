@@ -33,7 +33,7 @@ func NewStore() *Store {
 	db, err := memdb.NewMemDB(schema)
 
 	if err != nil {
-		panic("Could not create db: " + err.Error())
+		panic(fmt.Sprintf("tried to create memdb.MemDB: %v", err))
 	}
 
 	return &Store{
@@ -51,7 +51,7 @@ func (s *Store) Apply(entry *commonpb.Entry) interface{} {
 		err := cmd.Unmarshal(entry.Data)
 
 		if err != nil {
-			panic(err)
+			panic(fmt.Sprintf("could not unmarshal %v: %v", entry.Data, err))
 		}
 
 		return s.applyStore(entry.Index, &cmd)
@@ -77,7 +77,7 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 		var req rkvpb.InsertRequest
 		err := req.Unmarshal(cmd.Data)
 		if err != nil {
-			panic(err)
+			panic(fmt.Sprintf("could not unmarshal %v: %v", cmd.Data, err))
 		}
 
 		s.Push(req.ClientID, &req)
