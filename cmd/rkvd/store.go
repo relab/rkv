@@ -3,43 +3,27 @@ package main
 import (
 	"container/heap"
 	"fmt"
+	"strconv"
 
-	memdb "github.com/hashicorp/go-memdb"
+	"github.com/hashicorp/go-immutable-radix"
 	commonpb "github.com/relab/raft/raftpb"
 	"github.com/relab/rkv/rkvpb"
 )
 
-type KeyValue struct {
-	Key   string
-	Value string
-}
-
-type Client struct {
-	ClientID uint64
-	Seq      uint64
-}
-
 // Store is an implementation of raft.StateMachine. It holds client session
 // information, and a key-value store.
 type Store struct {
-	db *memdb.MemDB
-
+	kvs         *iradix.Tree
+	sessions    *iradix.Tree
 	pendingCmds map[uint64]*Cmds
-	pendingSeqs map[uint64]uint64
 }
 
 // NewStore initializes and returns a *Store.
 func NewStore() *Store {
-	db, err := memdb.NewMemDB(schema)
-
-	if err != nil {
-		panic(fmt.Sprintf("tried to create memdb.MemDB: %v", err))
-	}
-
 	return &Store{
-		db:          db,
+		kvs:         iradix.New(),
+		sessions:    iradix.New(),
 		pendingCmds: make(map[uint64]*Cmds),
-		pendingSeqs: make(map[uint64]uint64),
 	}
 }
 
@@ -65,12 +49,12 @@ func (s *Store) Apply(entry *commonpb.Entry) interface{} {
 func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 	switch cmd.CmdType {
 	case rkvpb.Register:
-		if _, ok := s.pendingCmds[i]; !ok {
-			var pending Cmds
-			heap.Init(&pending)
-			s.pendingCmds[i] = &pending
-			s.pendingSeqs[i] = 0
-		}
+		id := []byte(strconv.FormatUint(i, 10))
+		s.sessions, _, _ = s.sessions.Insert(id, uint64(0))
+
+		var pending Cmds
+		heap.Init(&pending)
+		s.pendingCmds[i] = &pending
 
 		return i
 	case rkvpb.Insert:
@@ -80,31 +64,37 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 			panic(fmt.Sprintf("could not unmarshal %v: %v", cmd.Data, err))
 		}
 
-		s.Push(req.ClientID, &req)
-		oldSeq := s.pendingSeqs[req.ClientID]
+		id := []byte(strconv.FormatUint(req.ClientID, 10))
+		raw, found := s.sessions.Get(id)
 
-		var toApply []*rkvpb.InsertRequest
-		for s.HasNext(req.ClientID) {
-			toApply = append(toApply, s.Pop(req.ClientID))
+		if !found {
+			panic(fmt.Sprintf("clientID %v not found", req.ClientID))
 		}
 
-		if len(toApply) > 0 {
-			txn := s.db.Txn(true)
-			for _, r := range toApply {
-				InsertKeyValue(txn, &KeyValue{
-					r.Key,
-					r.Value,
-				})
-			}
+		// TODO Check type and panic.
 
-			newSeq := oldSeq + uint64(len(toApply))
-			s.pendingSeqs[req.ClientID] = newSeq
+		oldSeq := raw.(uint64)
+		nextSeq := oldSeq + 1
 
-			InsertSession(txn, &Client{
-				ClientID: req.ClientID,
-				Seq:      newSeq,
-			})
-			txn.Commit()
+		txn := s.kvs.Txn()
+
+		if req.ClientSeq != nextSeq {
+			s.PushRequest(req.ClientID, &req)
+		} else {
+			txn.Insert([]byte(req.Key), req.Value)
+			nextSeq++
+		}
+
+		for s.HasRequest(req.ClientID, nextSeq) {
+			nextReq := s.PopRequest(req.ClientID)
+			txn.Insert([]byte(nextReq.Key), nextReq.Value)
+			nextSeq++
+		}
+
+		s.kvs = txn.CommitOnly()
+
+		if oldSeq != nextSeq {
+			s.sessions, _, _ = s.sessions.Insert(id, nextSeq)
 		}
 
 		return true
@@ -115,39 +105,71 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 			panic(err)
 		}
 
-		txn := s.db.Txn(false)
-		defer txn.Abort()
+		raw, found := s.kvs.Get([]byte(req.Key))
 
-		return LookupKeyValue(txn, req.Key).Value
+		if !found {
+			return "(none)"
+		}
+
+		// TODO Check type and panic.
+
+		return raw.(string)
 	default:
 		panic(fmt.Sprintf("got unknown cmd type: %v", cmd.CmdType))
 	}
 }
 
-// Push command onto queue.
-func (s *Store) Push(clientID uint64, req *rkvpb.InsertRequest) {
+// Cmds implements container/heap.
+type Cmds []*rkvpb.InsertRequest
+
+func (c Cmds) Len() int {
+	return len(c)
+}
+
+func (c Cmds) Less(i, j int) bool {
+	return c[i].ClientSeq < c[j].ClientSeq
+}
+
+func (c Cmds) Swap(i, j int) {
+	c[i].ClientSeq, c[j].ClientSeq = c[j].ClientSeq, c[i].ClientSeq
+}
+
+// Pop implements container/heap.
+func (c *Cmds) Pop() interface{} {
+	n := len(*c)
+	x := (*c)[n-1]
+	*c = (*c)[:n-1]
+	return x
+}
+
+// Push implements container/heap.
+func (c *Cmds) Push(x interface{}) {
+	*c = append(*c, x.(*rkvpb.InsertRequest))
+}
+
+// PushRequest command onto queue.
+func (s *Store) PushRequest(clientID uint64, req *rkvpb.InsertRequest) {
 	heap.Push(s.pendingCmds[clientID], req)
 }
 
-// HasNext returns true if the next command in the queue is the next entry in
+// HasRequest returns true if the next command in the queue is the next entry in
 // the sequence.
-func (s *Store) HasNext(clientID uint64) bool {
+func (s *Store) HasRequest(clientID, clientSeq uint64) bool {
 	pending := s.pendingCmds[clientID]
 
 	if len(*pending) == 0 {
 		return false
 	}
 
-	if (*pending)[0].ClientSeq != s.pendingSeqs[clientID]+1 {
+	if (*pending)[0].ClientSeq != clientSeq {
 		return false
 	}
 
 	return true
 }
 
-// Pop removes the next command from the queue and returns it. Only call Pop
-// after a successful call to HasNext.
-func (s *Store) Pop(clientID uint64) *rkvpb.InsertRequest {
-	s.pendingSeqs[clientID]++
+// PopRequest removes the next command from the queue and returns it. Only call
+// PopRequest after a successful call to HasRequest.
+func (s *Store) PopRequest(clientID uint64) *rkvpb.InsertRequest {
 	return heap.Pop(s.pendingCmds[clientID]).(*rkvpb.InsertRequest)
 }
