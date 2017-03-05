@@ -83,14 +83,14 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 		txn := s.kvs.Txn()
 
 		if req.ClientSeq != nextSeq {
-			s.PushRequest(req.ClientID, &req)
+			s.PushCmd(req.ClientID, &req)
 		} else {
 			txn.Insert([]byte(req.Key), req.Value)
 			nextSeq++
 		}
 
-		for s.HasRequest(req.ClientID, nextSeq) {
-			nextReq := s.PopRequest(req.ClientID)
+		for s.HasCmd(req.ClientID, nextSeq) {
+			nextReq := s.PopCmd(req.ClientID)
 			txn.Insert([]byte(nextReq.Key), nextReq.Value)
 			nextSeq++
 		}
@@ -155,14 +155,14 @@ func (c *Cmds) Push(x interface{}) {
 	*c = append(*c, x.(*rkvpb.InsertRequest))
 }
 
-// PushRequest command onto queue.
-func (s *Store) PushRequest(clientID uint64, req *rkvpb.InsertRequest) {
+// PushCmd command onto queue.
+func (s *Store) PushCmd(clientID uint64, req *rkvpb.InsertRequest) {
 	heap.Push(s.pendingCmds[clientID], req)
 }
 
-// HasRequest returns true if the next command in the queue is the next entry in
+// HasCmd returns true if the next command in the queue is the next entry in
 // the sequence.
-func (s *Store) HasRequest(clientID, clientSeq uint64) bool {
+func (s *Store) HasCmd(clientID, clientSeq uint64) bool {
 	pending := s.pendingCmds[clientID]
 
 	if len(*pending) == 0 {
@@ -176,8 +176,8 @@ func (s *Store) HasRequest(clientID, clientSeq uint64) bool {
 	return true
 }
 
-// PopRequest removes the next command from the queue and returns it. Only call
-// PopRequest after a successful call to HasRequest.
-func (s *Store) PopRequest(clientID uint64) *rkvpb.InsertRequest {
+// PopCmd removes the next command from the queue and returns it. Only call
+// PopCmd after a successful call to HasCmd.
+func (s *Store) PopCmd(clientID uint64) *rkvpb.InsertRequest {
 	return heap.Pop(s.pendingCmds[clientID]).(*rkvpb.InsertRequest)
 }
