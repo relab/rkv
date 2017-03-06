@@ -52,22 +52,25 @@ func (s *Store) Apply(entry *commonpb.Entry) interface{} {
 		}
 
 		res := s.applyStore(entry.Index, &cmd)
-
-		select {
-		case <-s.snapTimer.C:
-			go s.takeSnapshot(
-				entry.Term, entry.Index,
-				s.kvs.Root().Iterator(),
-				s.sessions.Root().Iterator(),
-			)
-		default:
-		}
-
+		s.maybeSnapshot(entry)
 		return res
 	case commonpb.EntryConfChange:
+		// TODO s.snapshotMaybe(entry)?
 		panic("not implemented yet")
 	default:
 		panic(fmt.Sprintf("got unknown entry type: %v", entry.EntryType))
+	}
+}
+
+func (s *Store) maybeSnapshot(entry *commonpb.Entry) {
+	select {
+	case <-s.snapTimer.C:
+		go s.takeSnapshot(
+			entry.Term, entry.Index,
+			s.kvs.Root().Iterator(),
+			s.sessions.Root().Iterator(),
+		)
+	default:
 	}
 }
 
