@@ -36,7 +36,9 @@ func NewStore() *Store {
 		sessions:    iradix.New(),
 		pendingCmds: make(map[uint64]*Cmds),
 		snapTimer:   time.NewTimer(SnapTick),
-		snapshot:    unsafe.Pointer(&commonpb.Snapshot{}),
+		// Important that Index == 1, nextIndex starts at 1, also 0 - 1
+		// will overflow uint64.
+		snapshot: unsafe.Pointer(&commonpb.Snapshot{Index: 1}),
 	}
 }
 
@@ -51,8 +53,14 @@ func (s *Store) Apply(entry *commonpb.Entry) interface{} {
 			panic(fmt.Sprintf("could not unmarshal %v: %v", entry.Data, err))
 		}
 
-		res := s.applyStore(entry.Index, &cmd)
-		s.maybeSnapshot(entry)
+		res, mutated := s.applyStore(entry.Index, &cmd)
+
+		// We can only snapshot if the state was mutated, i.e., on write
+		// requests. This is because we currently don't set entry.Index
+		// for read requests.
+		if mutated {
+			s.maybeSnapshot(entry)
+		}
 		return res
 	case commonpb.EntryConfChange:
 		// TODO s.snapshotMaybe(entry)?
@@ -75,7 +83,7 @@ func (s *Store) maybeSnapshot(entry *commonpb.Entry) {
 	}
 }
 
-func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
+func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) (interface{}, bool) {
 	switch cmd.CmdType {
 	case rkvpb.Register:
 		id := []byte(strconv.FormatUint(i, 10))
@@ -85,7 +93,7 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 		heap.Init(&pending)
 		s.pendingCmds[i] = &pending
 
-		return i
+		return i, true
 	case rkvpb.Insert:
 		var req rkvpb.InsertRequest
 		err := req.Unmarshal(cmd.Data)
@@ -129,7 +137,7 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 			s.sessions, _, _ = s.sessions.Insert(id, nextSeq)
 		}
 
-		return true
+		return true, true
 	case rkvpb.Lookup:
 		var req rkvpb.LookupRequest
 		err := req.Unmarshal(cmd.Data)
@@ -140,7 +148,7 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 		raw, found := s.kvs.Get([]byte(req.Key))
 
 		if !found {
-			return "(none)"
+			return "(none)", false
 		}
 
 		val, ok := raw.(string)
@@ -149,7 +157,7 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 			panic(fmt.Sprintf("expected string got %s", reflect.TypeOf(raw)))
 		}
 
-		return val
+		return val, false
 	default:
 		panic(fmt.Sprintf("got unknown cmd type: %v", cmd.CmdType))
 	}
@@ -216,6 +224,13 @@ func (s *Store) Restore(snapshot *commonpb.Snapshot) {
 	// Replace current snapshot.
 	atomic.StorePointer(&s.snapshot, unsafe.Pointer(snapshot))
 
+	s.pendingCmds = make(map[uint64]*Cmds)
+
+	// Return if we received the empty snapshot.
+	if snapshot.Data == nil {
+		return
+	}
+
 	var snap rkvpb.Snapshot
 	err := snap.Unmarshal(snapshot.Data)
 	if err != nil {
@@ -231,6 +246,10 @@ func (s *Store) Restore(snapshot *commonpb.Snapshot) {
 	txn = s.sessions.Txn()
 	for _, session := range snap.Sessions {
 		txn.Insert(session.ClientID, session.ClientSeq)
+		var pending Cmds
+		heap.Init(&pending)
+		id, _ := strconv.Atoi(string(session.ClientID))
+		s.pendingCmds[uint64(id)] = &pending
 	}
 	s.sessions = txn.CommitOnly()
 }
