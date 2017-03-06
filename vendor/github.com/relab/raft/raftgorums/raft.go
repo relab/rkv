@@ -11,8 +11,8 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/relab/raft"
+	"github.com/relab/raft/commonpb"
 	pb "github.com/relab/raft/raftgorums/raftpb"
-	commonpb "github.com/relab/raft/raftpb"
 )
 
 // State represents one of the Raft server states.
@@ -89,8 +89,11 @@ type Raft struct {
 
 	commitIndex uint64
 
-	nextIndex  uint64
-	matchIndex uint64
+	majorityNextIndex  uint64
+	majorityMatchIndex uint64
+
+	nextIndex  map[uint64]uint64
+	matchIndex map[uint64]uint64
 
 	baselineTimeout  time.Duration
 	electionTimeout  time.Duration
@@ -110,12 +113,26 @@ type Raft struct {
 
 	pendingReads []*raft.EntryFuture
 
+	applyCh   chan *entryFuture
+	snapCh    chan chan<- *commonpb.Snapshot
+	restoreCh chan *restoreFuture
+
 	batch bool
 
 	rvreqout chan *pb.RequestVoteRequest
 	aereqout chan *pb.AppendEntriesRequest
 
 	logger *Logger
+}
+
+type entryFuture struct {
+	entry  *commonpb.Entry
+	future *raft.EntryFuture
+}
+
+type restoreFuture struct {
+	snapshot *commonpb.Snapshot
+	done     chan struct{}
 }
 
 // NewRaft returns a new Raft given a configuration.
@@ -144,27 +161,32 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 
 	// TODO Order.
 	r := &Raft{
-		id:               cfg.ID,
-		currentTerm:      term,
-		votedFor:         votedFor,
-		sm:               sm,
-		storage:          cfg.Storage,
-		batch:            cfg.Batch,
-		addrs:            cfg.Nodes,
-		nextIndex:        1,
-		baselineTimeout:  cfg.ElectionTimeout,
-		electionTimeout:  electionTimeout,
-		heartbeatTimeout: cfg.HeartbeatTimeout,
-		baseline:         NewTimer(cfg.ElectionTimeout),
-		election:         NewTimer(electionTimeout),
-		heartbeat:        heartbeat,
-		cyclech:          make(chan struct{}, 128),
-		preElection:      true,
-		maxAppendEntries: cfg.MaxAppendEntries,
-		queue:            make(chan *raft.EntryFuture, BufferSize),
-		rvreqout:         make(chan *pb.RequestVoteRequest, BufferSize),
-		aereqout:         make(chan *pb.AppendEntriesRequest, BufferSize),
-		logger:           &Logger{cfg.ID, cfg.Logger},
+		id:                cfg.ID,
+		currentTerm:       term,
+		votedFor:          votedFor,
+		sm:                sm,
+		storage:           cfg.Storage,
+		batch:             cfg.Batch,
+		addrs:             cfg.Nodes,
+		majorityNextIndex: 1,
+		nextIndex:         make(map[uint64]uint64),
+		matchIndex:        make(map[uint64]uint64),
+		baselineTimeout:   cfg.ElectionTimeout,
+		electionTimeout:   electionTimeout,
+		heartbeatTimeout:  cfg.HeartbeatTimeout,
+		baseline:          NewTimer(cfg.ElectionTimeout),
+		election:          NewTimer(electionTimeout),
+		heartbeat:         heartbeat,
+		cyclech:           make(chan struct{}, 128),
+		preElection:       true,
+		maxAppendEntries:  cfg.MaxAppendEntries,
+		queue:             make(chan *raft.EntryFuture, BufferSize),
+		applyCh:           make(chan *entryFuture, 128),
+		snapCh:            make(chan chan<- *commonpb.Snapshot),
+		restoreCh:         make(chan *restoreFuture),
+		rvreqout:          make(chan *pb.RequestVoteRequest, BufferSize),
+		aereqout:          make(chan *pb.AppendEntriesRequest, BufferSize),
+		logger:            &Logger{cfg.ID, cfg.Logger},
 	}
 
 	r.logger.Printf("ElectionTimeout: %v", r.electionTimeout)
@@ -189,6 +211,8 @@ func (r *Raft) AppendEntriesRequestChan() chan *pb.AppendEntriesRequest {
 // Run handles timeouts.
 // All RPCs are handled by Gorums.
 func (r *Raft) Run() {
+	go r.runStateMachine()
+
 	for {
 		select {
 		case <-r.baseline.C:
@@ -384,8 +408,11 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 			r.logger.to(req.LeaderID, fmt.Sprintf("AppendEntries persisted %d entries to stable storage", len(toSave)))
 		}
 
-		old := r.commitIndex
+		if len(toSave) > 0 {
+			lcd = toSave[len(toSave)-1].Index
+		}
 
+		old := r.commitIndex
 		r.commitIndex = min(req.CommitIndex, lcd)
 
 		if r.commitIndex > old {
@@ -466,8 +493,8 @@ func (r *Raft) advanceCommitIndex() {
 
 	old := r.commitIndex
 
-	if r.logTerm(r.matchIndex) == r.currentTerm {
-		r.commitIndex = max(r.commitIndex, r.matchIndex)
+	if r.logTerm(r.majorityMatchIndex) == r.currentTerm {
+		r.commitIndex = max(r.commitIndex, r.majorityMatchIndex)
 	}
 
 	if r.commitIndex > old {
@@ -475,7 +502,7 @@ func (r *Raft) advanceCommitIndex() {
 	}
 
 	for _, future := range r.pendingReads {
-		r.apply(future.Entry, future)
+		r.applyCh <- &entryFuture{future.Entry, future}
 	}
 
 	r.pendingReads = nil
@@ -490,7 +517,7 @@ func (r *Raft) newCommit(old uint64) {
 			e := r.pending.Front()
 			if e != nil {
 				future := e.Value.(*raft.EntryFuture)
-				r.apply(future.Entry, future)
+				r.applyCh <- &entryFuture{future.Entry, future}
 				r.pending.Remove(e)
 				break
 			}
@@ -502,19 +529,33 @@ func (r *Raft) newCommit(old uint64) {
 				panic(fmt.Errorf("couldn't retrieve entry: %v", err))
 			}
 
-			r.apply(committed, nil)
+			r.applyCh <- &entryFuture{committed, nil}
 		}
 	}
 }
 
-func (r *Raft) apply(entry *commonpb.Entry, future *raft.EntryFuture) {
-	var res interface{}
-	if entry.EntryType != commonpb.EntryInternal {
-		res = r.sm.Apply(entry)
+func (r *Raft) runStateMachine() {
+	apply := func(entry *commonpb.Entry, future *raft.EntryFuture) {
+		var res interface{}
+		if entry.EntryType != commonpb.EntryInternal {
+			res = r.sm.Apply(entry)
+		}
+
+		if future != nil {
+			future.Respond(res)
+		}
 	}
 
-	if future != nil {
-		future.Respond(res)
+	for {
+		select {
+		case commit := <-r.applyCh:
+			apply(commit.entry, commit.future)
+		case future := <-r.snapCh:
+			future <- r.sm.Snapshot()
+		case future := <-r.restoreCh:
+			r.sm.Restore(future.snapshot)
+			close(future.done)
+		}
 	}
 }
 
@@ -615,7 +656,7 @@ func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 		r.leader = r.id
 		r.seenLeader = true
 		r.heardFromLeader = true
-		r.nextIndex = r.storage.NumEntries() + 1
+		r.majorityNextIndex = r.storage.NumEntries() + 1
 		r.pending = list.New()
 		r.pendingReads = nil
 
@@ -685,9 +726,20 @@ LOOP:
 	}
 
 	// #L1
+	entries := r.getNextEntries(r.majorityNextIndex)
+
+	if logLevel >= DEBUG {
+		r.logger.log(fmt.Sprintf("Sending %d entries", len(entries)))
+	}
+
+	r.aereqout <- r.getAppendEntriesRequest(r.majorityNextIndex, entries)
+}
+
+// TODO Assumes caller holds lock on Raft.
+func (r *Raft) getNextEntries(nextIndex uint64) []*commonpb.Entry {
 	var entries []*commonpb.Entry
 
-	next := r.nextIndex - 1
+	next := nextIndex - 1
 
 	if r.storage.NumEntries() > next {
 		maxEntries := min(next+r.maxAppendEntries, r.storage.NumEntries())
@@ -696,6 +748,7 @@ LOOP:
 			maxEntries = next + 1
 		}
 
+		var err error
 		entries, err = r.storage.GetEntries(next, maxEntries)
 
 		if err != nil {
@@ -703,15 +756,16 @@ LOOP:
 		}
 	}
 
-	if logLevel >= DEBUG {
-		r.logger.log(fmt.Sprintf("Sending %d entries", len(entries)))
-	}
+	return entries
+}
 
-	r.aereqout <- &pb.AppendEntriesRequest{
+// TODO Assumes caller holds lock on Raft.
+func (r *Raft) getAppendEntriesRequest(nextIndex uint64, entries []*commonpb.Entry) *pb.AppendEntriesRequest {
+	return &pb.AppendEntriesRequest{
 		LeaderID:     r.id,
 		Term:         r.currentTerm,
-		PrevLogIndex: next,
-		PrevLogTerm:  r.logTerm(next),
+		PrevLogIndex: nextIndex - 1,
+		PrevLogTerm:  r.logTerm(nextIndex - 1),
 		CommitIndex:  r.commitIndex,
 		Entries:      entries,
 	}
@@ -744,14 +798,14 @@ func (r *Raft) HandleAppendEntriesResponse(response *pb.AppendEntriesResponse, r
 			// Successful heartbeat to a majority.
 			r.election.Restart()
 
-			r.matchIndex = response.MatchIndex
-			r.nextIndex = r.matchIndex + 1
+			r.majorityMatchIndex = response.MatchIndex
+			r.majorityNextIndex = r.majorityMatchIndex + 1
 
 			return
 		}
 
 		// If AppendEntries was not successful lower match index.
-		r.nextIndex = max(1, response.MatchIndex)
+		r.majorityNextIndex = max(1, response.MatchIndex)
 	}
 }
 
@@ -802,7 +856,6 @@ func (r *Raft) getHint() uint32 {
 	return hint
 }
 
-// TODO Assumes caller already holds lock on Raft.
 func (r *Raft) logTerm(index uint64) uint64 {
 	if index < 1 || index > r.storage.NumEntries() {
 		return 0

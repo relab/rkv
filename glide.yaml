@@ -9,7 +9,7 @@ import:
 - package: github.com/relab/raft
   subpackages:
   - raftgorums
-  - raftpb
+  - commonpb
 - package: golang.org/x/net
   subpackages:
   - context

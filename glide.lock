@@ -1,5 +1,5 @@
-hash: e6f8900d67ad402b4e3a1213a0f982c609e58033b8347933e57d04d69c84c698
-updated: 2017-03-06T07:20:10.874041833+01:00
+hash: 70700e6eebc5ec9d3d584c94c744ec8d81f8addc42ca3ea16cced8c252061f36
+updated: 2017-03-06T16:11:21.017244498+01:00
 imports:
 - name: github.com/boltdb/bolt
   version: e9cf4fae01b5a8ff89d0ec6b32f0d9c9f79aefdd
@@ -22,12 +22,12 @@ imports:
 - name: github.com/relab/gorums
   version: 8ed594959a32dc96b3580859f3350a7599c45cc1
 - name: github.com/relab/raft
-  version: a07e935195bf6c90d37ded0beec68e3a12773ba6
+  version: 63264e4d73a4587f32c3c087fe462677b2ebf9df
   subpackages:
+  - commonpb
   - raftgorums
   - raftgorums/gorumspb
   - raftgorums/raftpb
-  - raftpb
 - name: golang.org/x/net
   version: d379faa25cbdc04d653984913a2ceb43b0bc46d7
   subpackages:

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/relab/raft/commonpb"
 	"github.com/relab/raft/raftgorums"
 	pb "github.com/relab/raft/raftgorums/raftpb"
-	commonpb "github.com/relab/raft/raftpb"
 )
 
 var log2 = []*commonpb.Entry{
@@ -368,6 +368,12 @@ type noopMachine struct{}
 func (n *noopMachine) Apply(*commonpb.Entry) interface{} {
 	return nil
 }
+
+func (n *noopMachine) Snapshot() *commonpb.Snapshot {
+	return nil
+}
+
+func (n *noopMachine) Restore(*commonpb.Snapshot) {}
 
 func TestHandleRequestVoteRequest(t *testing.T) {
 	for _, test := range handleRequestVoteRequestTests {

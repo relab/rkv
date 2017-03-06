@@ -10,7 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/hashicorp/go-immutable-radix"
-	commonpb "github.com/relab/raft/raftpb"
+	"github.com/relab/raft/commonpb"
 	"github.com/relab/rkv/rkvpb"
 )
 
