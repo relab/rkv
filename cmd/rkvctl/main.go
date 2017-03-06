@@ -133,7 +133,7 @@ func main() {
 		}
 
 		clientID := res.(*rkvpb.RegisterResponse).ClientID
-		var seq uint64 = 1
+		var seq uint64
 
 		fmt.Println("ClientID:", clientID)
 
@@ -184,15 +184,12 @@ func main() {
 								ctx,
 								&rkvpb.InsertRequest{
 									ClientID:  clientID,
-									ClientSeq: seq,
 									Key:       "key",
 									Value:     "value",
+									ClientSeq: atomic.AddUint64(&seq, 1),
 								},
 							)
 						}, 2*c.n)
-
-						seq++
-						atomic.AddUint64(&seq, 1)
 
 						if err != nil && stop == 0 {
 							log.Println("stopping:", clientID, err)
