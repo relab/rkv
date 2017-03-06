@@ -66,6 +66,7 @@ func (s *Store) maybeSnapshot(entry *commonpb.Entry) {
 	select {
 	case <-s.snapTimer.C:
 		go s.takeSnapshot(
+			atomic.LoadPointer(&s.snapshot),
 			entry.Term, entry.Index,
 			s.kvs.Root().Iterator(),
 			s.sessions.Root().Iterator(),
@@ -160,7 +161,7 @@ func (s *Store) Snapshot() *commonpb.Snapshot {
 	return snapshot
 }
 
-func (s *Store) takeSnapshot(term, index uint64, iterKvs, iterSessions *iradix.Iterator) {
+func (s *Store) takeSnapshot(old unsafe.Pointer, term, index uint64, iterKvs, iterSessions *iradix.Iterator) {
 	start := time.Now()
 	defer func() {
 		fmt.Println("Snapshot took:", time.Now().Sub(start))
@@ -200,17 +201,36 @@ func (s *Store) takeSnapshot(term, index uint64, iterKvs, iterSessions *iradix.I
 
 	fmt.Println("Snapshot size:", len(b), "bytes")
 
-	snapshot := &commonpb.Snapshot{
+	// This is supposed to prevent a snapshot in progress from overwriting a
+	// call to Restore.
+	atomic.CompareAndSwapPointer(&s.snapshot, old, unsafe.Pointer(&commonpb.Snapshot{
 		Term:  term,
 		Index: index,
 		Data:  b,
-	}
-
-	atomic.StorePointer(&s.snapshot, unsafe.Pointer(snapshot))
+	}))
 	s.snapTimer = time.NewTimer(SnapTick)
 }
 
-// TODO Implement.
+// Restore implements raft.StateMachine.
 func (s *Store) Restore(snapshot *commonpb.Snapshot) {
+	// Replace current snapshot.
+	atomic.StorePointer(&s.snapshot, unsafe.Pointer(snapshot))
 
+	var snap rkvpb.Snapshot
+	err := snap.Unmarshal(snapshot.Data)
+	if err != nil {
+		panic(fmt.Sprintf("could not unmarshal %v: %v", snapshot.Data, err))
+	}
+
+	txn := s.kvs.Txn()
+	for _, kv := range snap.Kvs {
+		txn.Insert(kv.Key, kv.Value)
+	}
+	s.kvs = txn.CommitOnly()
+
+	txn = s.sessions.Txn()
+	for _, session := range snap.Sessions {
+		txn.Insert(session.ClientID, session.ClientSeq)
+	}
+	s.sessions = txn.CommitOnly()
 }
