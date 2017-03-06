@@ -78,18 +78,18 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 			panic(fmt.Sprintf("expected uint64 got %s", reflect.TypeOf(raw)))
 		}
 
-		nextSeq := oldSeq + 1
+		nextSeq := oldSeq
 
 		txn := s.kvs.Txn()
 
-		if req.ClientSeq != nextSeq {
+		if req.ClientSeq != nextSeq+1 {
 			s.PushCmd(req.ClientID, &req)
 		} else {
 			txn.Insert([]byte(req.Key), req.Value)
 			nextSeq++
 		}
 
-		for s.HasCmd(req.ClientID, nextSeq) {
+		for s.HasCmd(req.ClientID, nextSeq+1) {
 			nextReq := s.PopCmd(req.ClientID)
 			txn.Insert([]byte(nextReq.Key), nextReq.Value)
 			nextSeq++
