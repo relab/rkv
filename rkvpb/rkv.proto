@@ -49,3 +49,18 @@ message LookupRequest {
 message LookupResponse {
   string value = 1;
 }
+
+message KeyValue {
+  bytes key    = 1;
+  string value = 2;
+}
+
+message Session {
+  bytes clientID   = 1;
+  uint64 clientSeq = 2;
+}
+
+message Snapshot {
+  repeated KeyValue kvs      = 1;
+  repeated Session  sessions = 2;
+}

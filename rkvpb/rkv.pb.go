@@ -16,6 +16,9 @@
 		InsertResponse
 		LookupRequest
 		LookupResponse
+		KeyValue
+		Session
+		Snapshot
 */
 package rkvpb
 
@@ -132,6 +135,36 @@ func (m *LookupResponse) String() string            { return proto.CompactTextSt
 func (*LookupResponse) ProtoMessage()               {}
 func (*LookupResponse) Descriptor() ([]byte, []int) { return fileDescriptorRkv, []int{6} }
 
+type KeyValue struct {
+	Key   []byte `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+}
+
+func (m *KeyValue) Reset()                    { *m = KeyValue{} }
+func (m *KeyValue) String() string            { return proto.CompactTextString(m) }
+func (*KeyValue) ProtoMessage()               {}
+func (*KeyValue) Descriptor() ([]byte, []int) { return fileDescriptorRkv, []int{7} }
+
+type Session struct {
+	ClientID  []byte `protobuf:"bytes,1,opt,name=clientID,proto3" json:"clientID,omitempty"`
+	ClientSeq uint64 `protobuf:"varint,2,opt,name=clientSeq,proto3" json:"clientSeq,omitempty"`
+}
+
+func (m *Session) Reset()                    { *m = Session{} }
+func (m *Session) String() string            { return proto.CompactTextString(m) }
+func (*Session) ProtoMessage()               {}
+func (*Session) Descriptor() ([]byte, []int) { return fileDescriptorRkv, []int{8} }
+
+type Snapshot struct {
+	Kvs      []*KeyValue `protobuf:"bytes,1,rep,name=kvs" json:"kvs,omitempty"`
+	Sessions []*Session  `protobuf:"bytes,2,rep,name=sessions" json:"sessions,omitempty"`
+}
+
+func (m *Snapshot) Reset()                    { *m = Snapshot{} }
+func (m *Snapshot) String() string            { return proto.CompactTextString(m) }
+func (*Snapshot) ProtoMessage()               {}
+func (*Snapshot) Descriptor() ([]byte, []int) { return fileDescriptorRkv, []int{9} }
+
 func init() {
 	proto.RegisterType((*Cmd)(nil), "rkvpb.Cmd")
 	proto.RegisterType((*RegisterRequest)(nil), "rkvpb.RegisterRequest")
@@ -140,6 +173,9 @@ func init() {
 	proto.RegisterType((*InsertResponse)(nil), "rkvpb.InsertResponse")
 	proto.RegisterType((*LookupRequest)(nil), "rkvpb.LookupRequest")
 	proto.RegisterType((*LookupResponse)(nil), "rkvpb.LookupResponse")
+	proto.RegisterType((*KeyValue)(nil), "rkvpb.KeyValue")
+	proto.RegisterType((*Session)(nil), "rkvpb.Session")
+	proto.RegisterType((*Snapshot)(nil), "rkvpb.Snapshot")
 	proto.RegisterEnum("rkvpb.CmdType", CmdType_name, CmdType_value)
 }
 
@@ -467,6 +503,107 @@ func (m *LookupResponse) MarshalTo(dAtA []byte) (int, error) {
 	return i, nil
 }
 
+func (m *KeyValue) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalTo(dAtA)
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *KeyValue) MarshalTo(dAtA []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if len(m.Key) > 0 {
+		dAtA[i] = 0xa
+		i++
+		i = encodeVarintRkv(dAtA, i, uint64(len(m.Key)))
+		i += copy(dAtA[i:], m.Key)
+	}
+	if len(m.Value) > 0 {
+		dAtA[i] = 0x12
+		i++
+		i = encodeVarintRkv(dAtA, i, uint64(len(m.Value)))
+		i += copy(dAtA[i:], m.Value)
+	}
+	return i, nil
+}
+
+func (m *Session) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalTo(dAtA)
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Session) MarshalTo(dAtA []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if len(m.ClientID) > 0 {
+		dAtA[i] = 0xa
+		i++
+		i = encodeVarintRkv(dAtA, i, uint64(len(m.ClientID)))
+		i += copy(dAtA[i:], m.ClientID)
+	}
+	if m.ClientSeq != 0 {
+		dAtA[i] = 0x10
+		i++
+		i = encodeVarintRkv(dAtA, i, uint64(m.ClientSeq))
+	}
+	return i, nil
+}
+
+func (m *Snapshot) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalTo(dAtA)
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Snapshot) MarshalTo(dAtA []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if len(m.Kvs) > 0 {
+		for _, msg := range m.Kvs {
+			dAtA[i] = 0xa
+			i++
+			i = encodeVarintRkv(dAtA, i, uint64(msg.Size()))
+			n, err := msg.MarshalTo(dAtA[i:])
+			if err != nil {
+				return 0, err
+			}
+			i += n
+		}
+	}
+	if len(m.Sessions) > 0 {
+		for _, msg := range m.Sessions {
+			dAtA[i] = 0x12
+			i++
+			i = encodeVarintRkv(dAtA, i, uint64(msg.Size()))
+			n, err := msg.MarshalTo(dAtA[i:])
+			if err != nil {
+				return 0, err
+			}
+			i += n
+		}
+	}
+	return i, nil
+}
+
 func encodeFixed64Rkv(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	dAtA[offset+1] = uint8(v >> 8)
@@ -567,6 +704,51 @@ func (m *LookupResponse) Size() (n int) {
 	l = len(m.Value)
 	if l > 0 {
 		n += 1 + l + sovRkv(uint64(l))
+	}
+	return n
+}
+
+func (m *KeyValue) Size() (n int) {
+	var l int
+	_ = l
+	l = len(m.Key)
+	if l > 0 {
+		n += 1 + l + sovRkv(uint64(l))
+	}
+	l = len(m.Value)
+	if l > 0 {
+		n += 1 + l + sovRkv(uint64(l))
+	}
+	return n
+}
+
+func (m *Session) Size() (n int) {
+	var l int
+	_ = l
+	l = len(m.ClientID)
+	if l > 0 {
+		n += 1 + l + sovRkv(uint64(l))
+	}
+	if m.ClientSeq != 0 {
+		n += 1 + sovRkv(uint64(m.ClientSeq))
+	}
+	return n
+}
+
+func (m *Snapshot) Size() (n int) {
+	var l int
+	_ = l
+	if len(m.Kvs) > 0 {
+		for _, e := range m.Kvs {
+			l = e.Size()
+			n += 1 + l + sovRkv(uint64(l))
+		}
+	}
+	if len(m.Sessions) > 0 {
+		for _, e := range m.Sessions {
+			l = e.Size()
+			n += 1 + l + sovRkv(uint64(l))
+		}
 	}
 	return n
 }
@@ -1177,6 +1359,328 @@ func (m *LookupResponse) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+func (m *KeyValue) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRkv
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: KeyValue: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: KeyValue: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Key", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRkv
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthRkv
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Key = append(m.Key[:0], dAtA[iNdEx:postIndex]...)
+			if m.Key == nil {
+				m.Key = []byte{}
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Value", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRkv
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRkv
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Value = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRkv(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthRkv
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *Session) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRkv
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: Session: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: Session: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClientID", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRkv
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthRkv
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ClientID = append(m.ClientID[:0], dAtA[iNdEx:postIndex]...)
+			if m.ClientID == nil {
+				m.ClientID = []byte{}
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClientSeq", wireType)
+			}
+			m.ClientSeq = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRkv
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ClientSeq |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRkv(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthRkv
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *Snapshot) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRkv
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: Snapshot: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: Snapshot: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Kvs", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRkv
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRkv
+			}
+			postIndex := iNdEx + msglen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Kvs = append(m.Kvs, &KeyValue{})
+			if err := m.Kvs[len(m.Kvs)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Sessions", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRkv
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRkv
+			}
+			postIndex := iNdEx + msglen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Sessions = append(m.Sessions, &Session{})
+			if err := m.Sessions[len(m.Sessions)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRkv(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthRkv
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
 func skipRkv(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
@@ -1285,30 +1789,35 @@ var (
 func init() { proto.RegisterFile("rkvpb/rkv.proto", fileDescriptorRkv) }
 
 var fileDescriptorRkv = []byte{
-	// 388 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x7c, 0x52, 0xcd, 0x6e, 0xda, 0x40,
-	0x18, 0xf4, 0xda, 0xe6, 0xef, 0x13, 0x18, 0x77, 0x45, 0x5b, 0xcb, 0xaa, 0x2c, 0xd7, 0x87, 0xca,
-	0xaa, 0x54, 0x5b, 0xa2, 0xea, 0xa9, 0xb7, 0xd2, 0x0b, 0x4a, 0x4e, 0x9b, 0x28, 0x77, 0x0c, 0x1b,
-	0x07, 0x19, 0x58, 0xe3, 0x1f, 0x24, 0xde, 0x22, 0x8f, 0x92, 0xc7, 0xe0, 0xc8, 0x23, 0x04, 0xf2,
-	0x22, 0x11, 0xeb, 0xb5, 0x1d, 0x88, 0x94, 0xdb, 0x7c, 0xb3, 0xdf, 0x37, 0x33, 0x0c, 0x86, 0x7e,
-	0x12, 0x6d, 0xe2, 0xc0, 0x4f, 0xa2, 0x8d, 0x17, 0x27, 0x2c, 0x63, 0xb8, 0xc1, 0x09, 0xf3, 0x57,
-	0x38, 0xcf, 0x1e, 0xf2, 0xc0, 0x9b, 0xb2, 0xa5, 0x1f, 0xb2, 0x90, 0xf9, 0xfc, 0x35, 0xc8, 0xef,
-	0xf9, 0xc4, 0x07, 0x8e, 0x8a, 0x2b, 0x67, 0x04, 0xca, 0x68, 0x39, 0xc3, 0x2e, 0xb4, 0xa6, 0xcb,
-	0xd9, 0xed, 0x36, 0xa6, 0x06, 0xb2, 0x91, 0xab, 0x0d, 0x35, 0x8f, 0xcb, 0x79, 0xa3, 0x82, 0x25,
-	0xe5, 0x33, 0xc6, 0xa0, 0xce, 0x26, 0xd9, 0xc4, 0x90, 0x6d, 0xe4, 0x76, 0x09, 0xc7, 0xce, 0x27,
-	0xe8, 0x13, 0x1a, 0xce, 0xd3, 0x8c, 0x26, 0x84, 0xae, 0x73, 0x9a, 0x66, 0x8e, 0x07, 0x7a, 0x4d,
-	0xa5, 0x31, 0x5b, 0xa5, 0x14, 0x9b, 0xd0, 0x9e, 0x2e, 0xe6, 0x74, 0x95, 0x8d, 0xff, 0x73, 0x17,
-	0x95, 0x54, 0xb3, 0xb3, 0x86, 0xde, 0x78, 0x95, 0xd2, 0x24, 0x13, 0x02, 0x1f, 0x2d, 0xe3, 0x6f,
-	0xd0, 0x29, 0xf0, 0x0d, 0x5d, 0xf3, 0x20, 0x2a, 0xa9, 0x09, 0xac, 0x83, 0x12, 0xd1, 0xad, 0xa1,
-	0xd8, 0xc8, 0xed, 0x90, 0x13, 0xc4, 0x03, 0x68, 0x6c, 0x26, 0x8b, 0x9c, 0x1a, 0x2a, 0xe7, 0x8a,
-	0xc1, 0xb1, 0x41, 0x2b, 0x2d, 0x45, 0x40, 0x0d, 0x64, 0x16, 0x71, 0xb7, 0x36, 0x91, 0x59, 0xe4,
-	0x7c, 0x87, 0xde, 0x35, 0x63, 0x51, 0x1e, 0x97, 0xa1, 0x84, 0x34, 0xaa, 0xa4, 0x9d, 0x1f, 0xa0,
-	0x95, 0x2b, 0x42, 0xa4, 0x32, 0x43, 0x6f, 0xcc, 0x7e, 0xfa, 0xd0, 0x12, 0x55, 0xe2, 0x2e, 0xb4,
-	0xcb, 0x6a, 0x74, 0x09, 0x03, 0x34, 0x8b, 0x14, 0x3a, 0x3a, 0xe1, 0x42, 0x4c, 0x97, 0x87, 0x4f,
-	0x08, 0x14, 0x72, 0x75, 0x87, 0xff, 0xd6, 0xdb, 0xf8, 0x8b, 0xf8, 0x53, 0x2e, 0xca, 0x36, 0xbf,
-	0xbe, 0xe3, 0x45, 0x96, 0x3f, 0xa5, 0x38, 0x1e, 0x88, 0x95, 0xb3, 0x92, 0xcd, 0xcf, 0x17, 0x6c,
-	0x7d, 0x56, 0xe4, 0xa8, 0xce, 0xce, 0x6a, 0xa8, 0xce, 0xce, 0x7f, 0xf9, 0x3f, 0x63, 0x77, 0xb0,
-	0xa4, 0xfd, 0xc1, 0x92, 0x76, 0x47, 0x0b, 0xed, 0x8f, 0x16, 0x7a, 0x3e, 0x5a, 0xe8, 0xf1, 0xc5,
-	0x92, 0x82, 0x26, 0xff, 0xd8, 0x7e, 0xbf, 0x06, 0x00, 0x00, 0xff, 0xff, 0x74, 0x1b, 0x4d, 0xcf,
-	0xb5, 0x02, 0x00, 0x00,
+	// 465 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x8c, 0x53, 0xcd, 0x6e, 0xd3, 0x40,
+	0x10, 0xce, 0xda, 0x69, 0xe3, 0x0e, 0xa9, 0x63, 0x56, 0x05, 0xac, 0x08, 0x59, 0xee, 0x1e, 0x90,
+	0x55, 0x09, 0x47, 0x0a, 0xe2, 0xc4, 0x8d, 0x70, 0xa9, 0xca, 0x69, 0x83, 0x2a, 0x71, 0xcc, 0xcf,
+	0x92, 0x46, 0x6e, 0xbc, 0x8e, 0x77, 0x1d, 0x29, 0x6f, 0xc1, 0xa3, 0xf0, 0x18, 0x3d, 0xf6, 0x11,
+	0x68, 0x78, 0x11, 0x94, 0xfd, 0x71, 0x7e, 0x2a, 0x21, 0x6e, 0xb3, 0xdf, 0xcc, 0x7c, 0xdf, 0xa7,
+	0x99, 0x59, 0xe8, 0x94, 0xd9, 0xaa, 0x18, 0xf7, 0xca, 0x6c, 0x95, 0x16, 0x25, 0x97, 0x1c, 0x9f,
+	0x28, 0xa0, 0xfb, 0x7e, 0x36, 0x97, 0x77, 0xd5, 0x38, 0x9d, 0xf0, 0x45, 0x6f, 0xc6, 0x67, 0xbc,
+	0xa7, 0xb2, 0xe3, 0xea, 0x87, 0x7a, 0xa9, 0x87, 0x8a, 0x74, 0x17, 0x19, 0x80, 0x3b, 0x58, 0x4c,
+	0x71, 0x02, 0xad, 0xc9, 0x62, 0xfa, 0x6d, 0x5d, 0xb0, 0x10, 0xc5, 0x28, 0xf1, 0xfb, 0x7e, 0xaa,
+	0xe8, 0xd2, 0x81, 0x46, 0xa9, 0x4d, 0x63, 0x0c, 0xcd, 0xe9, 0x48, 0x8e, 0x42, 0x27, 0x46, 0x49,
+	0x9b, 0xaa, 0x98, 0xbc, 0x84, 0x0e, 0x65, 0xb3, 0xb9, 0x90, 0xac, 0xa4, 0x6c, 0x59, 0x31, 0x21,
+	0x49, 0x0a, 0xc1, 0x0e, 0x12, 0x05, 0xcf, 0x05, 0xc3, 0x5d, 0xf0, 0x26, 0xf7, 0x73, 0x96, 0xcb,
+	0xeb, 0x2f, 0x4a, 0xa5, 0x49, 0xeb, 0x37, 0x59, 0xc2, 0xf9, 0x75, 0x2e, 0x58, 0x29, 0x0d, 0xc1,
+	0xbf, 0x8a, 0xf1, 0x5b, 0x38, 0xd3, 0xf1, 0x90, 0x2d, 0x95, 0x91, 0x26, 0xdd, 0x01, 0x38, 0x00,
+	0x37, 0x63, 0xeb, 0xd0, 0x8d, 0x51, 0x72, 0x46, 0xb7, 0x21, 0xbe, 0x80, 0x93, 0xd5, 0xe8, 0xbe,
+	0x62, 0x61, 0x53, 0x61, 0xfa, 0x41, 0x62, 0xf0, 0xad, 0xa4, 0x31, 0xe8, 0x83, 0xc3, 0x33, 0xa5,
+	0xe6, 0x51, 0x87, 0x67, 0xe4, 0x12, 0xce, 0xbf, 0x72, 0x9e, 0x55, 0x85, 0x35, 0x65, 0xa8, 0x51,
+	0x4d, 0x4d, 0xde, 0x81, 0x6f, 0x4b, 0x0c, 0x49, 0x2d, 0x86, 0xf6, 0xc5, 0xfa, 0xe0, 0xdd, 0xb0,
+	0xf5, 0xed, 0x36, 0xde, 0x67, 0x69, 0x1f, 0x19, 0x74, 0xf6, 0x7b, 0x06, 0xd0, 0x1a, 0x32, 0x21,
+	0xe6, 0x3c, 0x7f, 0x36, 0x8d, 0xf6, 0xff, 0x4e, 0x83, 0x7c, 0x07, 0x6f, 0x98, 0x8f, 0x0a, 0x71,
+	0xc7, 0x25, 0xbe, 0x04, 0x37, 0x5b, 0x89, 0x10, 0xc5, 0x6e, 0xf2, 0xa2, 0xdf, 0x31, 0x1b, 0xb6,
+	0xb6, 0xe8, 0x36, 0x87, 0xaf, 0xc0, 0x13, 0x5a, 0x53, 0x84, 0x8e, 0xaa, 0xb3, 0x97, 0x60, 0xac,
+	0xd0, 0x3a, 0x7f, 0xd5, 0x83, 0x96, 0x39, 0x0f, 0xdc, 0x06, 0xcf, 0xae, 0x3b, 0x68, 0x60, 0x80,
+	0x53, 0x3d, 0xd9, 0x00, 0x6d, 0x63, 0x3d, 0xa0, 0xc0, 0xe9, 0xff, 0x42, 0xe0, 0xd2, 0x9b, 0x5b,
+	0xfc, 0x69, 0x57, 0x8d, 0x5f, 0x1b, 0xfa, 0xa3, 0x03, 0xea, 0xbe, 0x79, 0x86, 0x9b, 0xf9, 0x7e,
+	0xb4, 0xe4, 0xf8, 0xc2, 0x94, 0x1c, 0x1c, 0x4e, 0xf7, 0xd5, 0x11, 0xba, 0x6b, 0xd3, 0x3e, 0xea,
+	0xb6, 0x83, 0xd5, 0xd6, 0x6d, 0x87, 0xdb, 0xfc, 0x1c, 0x3e, 0x3c, 0x45, 0x8d, 0xc7, 0xa7, 0xa8,
+	0xf1, 0xb0, 0x89, 0xd0, 0xe3, 0x26, 0x42, 0xbf, 0x37, 0x11, 0xfa, 0xf9, 0x27, 0x6a, 0x8c, 0x4f,
+	0xd5, 0x07, 0xfa, 0xf0, 0x37, 0x00, 0x00, 0xff, 0xff, 0x6f, 0x02, 0x7d, 0xda, 0x89, 0x03, 0x00,
+	0x00,
 }

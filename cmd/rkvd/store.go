@@ -5,11 +5,18 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"sync/atomic"
+	"time"
+	"unsafe"
 
 	"github.com/hashicorp/go-immutable-radix"
 	commonpb "github.com/relab/raft/raftpb"
 	"github.com/relab/rkv/rkvpb"
 )
+
+// SnapTick is the time between finishing taking a snapshot and starting to take
+// a new one. TODO Config.
+const SnapTick = 20 * time.Second
 
 // Store is an implementation of raft.StateMachine. It holds client session
 // information, and a key-value store.
@@ -17,6 +24,9 @@ type Store struct {
 	kvs         *iradix.Tree
 	sessions    *iradix.Tree
 	pendingCmds map[uint64]*Cmds
+
+	snapTimer *time.Timer
+	snapshot  unsafe.Pointer // *commonpb.Snapshot
 }
 
 // NewStore initializes and returns a *Store.
@@ -25,6 +35,8 @@ func NewStore() *Store {
 		kvs:         iradix.New(),
 		sessions:    iradix.New(),
 		pendingCmds: make(map[uint64]*Cmds),
+		snapTimer:   time.NewTimer(SnapTick),
+		snapshot:    unsafe.Pointer(&commonpb.Snapshot{}),
 	}
 }
 
@@ -39,7 +51,19 @@ func (s *Store) Apply(entry *commonpb.Entry) interface{} {
 			panic(fmt.Sprintf("could not unmarshal %v: %v", entry.Data, err))
 		}
 
-		return s.applyStore(entry.Index, &cmd)
+		res := s.applyStore(entry.Index, &cmd)
+
+		select {
+		case <-s.snapTimer.C:
+			go s.takeSnapshot(
+				entry.Term, entry.Index,
+				s.kvs.Root().Iterator(),
+				s.sessions.Root().Iterator(),
+			)
+		default:
+		}
+
+		return res
 	case commonpb.EntryConfChange:
 		panic("not implemented yet")
 	default:
@@ -125,4 +149,65 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) interface{} {
 	default:
 		panic(fmt.Sprintf("got unknown cmd type: %v", cmd.CmdType))
 	}
+}
+
+// Snapshot implements raft.StateMachine.
+func (s *Store) Snapshot() *commonpb.Snapshot {
+	snapshot := (*commonpb.Snapshot)(atomic.LoadPointer(&s.snapshot))
+	return snapshot
+}
+
+func (s *Store) takeSnapshot(term, index uint64, iterKvs, iterSessions *iradix.Iterator) {
+	start := time.Now()
+	defer func() {
+		fmt.Println("Snapshot took:", time.Now().Sub(start))
+	}()
+
+	var kvs []*rkvpb.KeyValue
+	k, v, more := iterKvs.Next()
+
+	for more {
+		kvs = append(kvs, &rkvpb.KeyValue{
+			Key:   k,
+			Value: v.(string),
+		})
+		k, v, more = iterKvs.Next()
+	}
+
+	var sessions []*rkvpb.Session
+	k, v, more = iterSessions.Next()
+
+	for more {
+		sessions = append(sessions, &rkvpb.Session{
+			ClientID:  k,
+			ClientSeq: v.(uint64),
+		})
+		k, v, more = iterSessions.Next()
+	}
+
+	snap := &rkvpb.Snapshot{
+		Kvs:      kvs,
+		Sessions: sessions,
+	}
+
+	b, err := snap.Marshal()
+	if err != nil {
+		panic(fmt.Sprintf("could not marshal %v: %v", snap, err))
+	}
+
+	fmt.Println("Snapshot size:", len(b), "bytes")
+
+	snapshot := &commonpb.Snapshot{
+		Term:  term,
+		Index: index,
+		Data:  b,
+	}
+
+	atomic.StorePointer(&s.snapshot, unsafe.Pointer(snapshot))
+	s.snapTimer = time.NewTimer(SnapTick)
+}
+
+// TODO Implement.
+func (s *Store) Restore(snapshot *commonpb.Snapshot) {
+
 }
