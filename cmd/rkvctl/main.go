@@ -106,6 +106,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	var n uint64 = 10000
+	z := rand.NewZipf(rand.New(rand.NewSource(99)), 1.1, 4, n)
+
 	sleep := time.Second / time.Duration(*throughput)
 	var wg sync.WaitGroup
 	var startWait sync.WaitGroup
@@ -156,7 +159,7 @@ func main() {
 							return c.conns[leader].Lookup(
 								ctx,
 								&rkvpb.LookupRequest{
-									Key: "key",
+									Key: strconv.FormatUint(z.Uint64(), 10),
 								},
 							)
 						}, 2*c.n)
@@ -184,9 +187,9 @@ func main() {
 								ctx,
 								&rkvpb.InsertRequest{
 									ClientID:  clientID,
-									Key:       "key",
-									Value:     "value",
 									ClientSeq: atomic.AddUint64(&seq, 1),
+									Key:       strconv.FormatUint(z.Uint64(), 10),
+									Value:     strconv.FormatUint(z.Uint64(), 10),
 								},
 							)
 						}, 2*c.n)
