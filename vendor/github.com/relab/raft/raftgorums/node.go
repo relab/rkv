@@ -75,7 +75,6 @@ func (n *Node) Run() error {
 			grpc.WithBlock(),
 			grpc.WithInsecure(),
 			grpc.WithTimeout(TCPConnect*time.Millisecond)),
-		// TODO WithLogger?
 	}
 
 	mgr, err := gorums.NewManager(n.peers, opts...)
@@ -96,8 +95,23 @@ func (n *Node) Run() error {
 	for {
 		rvreqout := n.Raft.RequestVoteRequestChan()
 		aereqout := n.Raft.AppendEntriesRequestChan()
+		sreqout := n.Raft.SnapshotRequestChan()
 
 		select {
+		case req := <-sreqout:
+			ctx, cancel := context.WithTimeout(context.Background(), TCPConnect*time.Millisecond)
+			node, _ := n.mgr.Node(n.getNodeID(req.FollowerID))
+			snapshot, err := node.RaftClient.GetState(ctx, req)
+			cancel()
+
+			if err != nil {
+				// TODO Better error message.
+				log.Println(fmt.Sprintf("Snapshot request failed = %v", err))
+
+			}
+
+			n.Raft.restoreCh <- snapshot
+
 		case req := <-rvreqout:
 			ctx, cancel := context.WithTimeout(context.Background(), TCPHeartbeat*time.Millisecond)
 			res, err := n.conf.RequestVote(ctx, req)
@@ -114,6 +128,7 @@ func (n *Node) Run() error {
 			}
 
 			n.Raft.HandleRequestVoteResponse(res.RequestVoteResponse)
+
 		case req := <-aereqout:
 			ctx, cancel := context.WithTimeout(context.Background(), TCPHeartbeat*time.Millisecond)
 			res, err := n.conf.AppendEntries(ctx, req)
@@ -138,21 +153,19 @@ func (n *Node) Run() error {
 				select {
 				case index, ok := <-matchIndex:
 					if !ok {
-						delete(n.catchingUp, nodeID)
+						n.addBackNode(nodeID)
 						continue
 					}
 
 					matchIndex <- res.MatchIndex
 
 					if index == res.MatchIndex {
-						delete(n.catchingUp, nodeID)
-
-						newSet := append(n.conf.NodeIDs(), nodeID)
-						n.conf, err = mgr.NewConfiguration(newSet, NewQuorumSpec(len(n.peers)+1))
+						n.addBackNode(nodeID)
 					}
 				default:
 				}
 			}
+
 		case creq := <-n.catchUp:
 			oldSet := n.conf.NodeIDs()
 
@@ -163,8 +176,7 @@ func (n *Node) Run() error {
 				continue
 			}
 
-			nodes := n.mgr.NodeIDs()
-			node := nodes[n.lookup[creq.followerID]]
+			node := n.getNodeID(creq.followerID)
 			// We use 2 peers as we need to count the leader.
 			single, err := n.mgr.NewConfiguration([]uint32{node}, NewQuorumSpec(2))
 
@@ -184,17 +196,40 @@ func (n *Node) Run() error {
 				i++
 			}
 
-			// It's important not to change the quorum size when removing the server.
-			n.conf, err = mgr.NewConfiguration(tmpSet, NewQuorumSpec(len(n.peers)+1))
+			// It's important not to change the quorum size when
+			// removing the server. We reduce N by one so we don't
+			// wait on the recovering server.
+			n.conf, err = mgr.NewConfiguration(tmpSet, &QuorumSpec{
+				N: len(tmpSet),
+				Q: (len(n.peers) + 1) / 2,
+			})
 
 			if err != nil {
 				panic(fmt.Sprintf("tried to create new configuration %v: %v", tmpSet, err))
 			}
 
 			matchIndex := make(chan uint64)
-			go n.doCatchUp(single, creq.nextIndex, matchIndex)
 			n.catchingUp[node] = matchIndex
+			go n.doCatchUp(single, creq.nextIndex, matchIndex)
 		}
+	}
+}
+
+func (n *Node) addBackNode(nodeID uint32) {
+	n.Raft.Lock()
+	n.Raft.catchingUp = false
+	n.Raft.Unlock()
+	delete(n.catchingUp, nodeID)
+
+	newSet := append(n.conf.NodeIDs(), nodeID)
+	var err error
+	n.conf, err = n.mgr.NewConfiguration(newSet, &QuorumSpec{
+		N: len(newSet),
+		Q: (len(n.peers) + 1) / 2,
+	})
+
+	if err != nil {
+		panic(fmt.Sprintf("tried to create new configuration %v: %v", newSet, err))
 	}
 }
 
@@ -215,8 +250,8 @@ func (n *Node) GetState(ctx context.Context, req *pb.SnapshotRequest) (*commonpb
 	select {
 	case snapshot := <-future:
 		n.catchUp <- &catchUpRequest{
-			snapshot.Index,
-			req.FollowerID,
+			nextIndex:  snapshot.Index,
+			followerID: req.FollowerID,
 		}
 		return snapshot, nil
 	case <-ctx.Done():
@@ -248,7 +283,7 @@ func (n *Node) doCatchUp(conf *gorums.Configuration, nextIndex uint64, matchInde
 
 		if err != nil {
 			// TODO Better error message.
-			log.Println(fmt.Sprintf("AppendEntries failed = %v", err))
+			log.Println(fmt.Sprintf("Catch-up AppendEntries failed = %v", err))
 
 			if res.AppendEntriesResponse == nil {
 				continue
@@ -273,7 +308,13 @@ func (n *Node) doCatchUp(conf *gorums.Configuration, nextIndex uint64, matchInde
 			continue
 		}
 
-		// If AppendEntries was not successful lower match index.
-		nextIndex = max(1, response.MatchIndex)
+		// If AppendEntries was unsuccessful a new catch-up process will
+		// start.
+		close(matchIndex)
+		return
 	}
+}
+
+func (n *Node) getNodeID(raftID uint64) uint32 {
+	return n.mgr.NodeIDs()[n.lookup[raftID]]
 }
