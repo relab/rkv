@@ -45,7 +45,7 @@ func NewNode(server *grpc.Server, sm raft.StateMachine, cfg *Config) *Node {
 	lookup := make(map[uint64]int)
 
 	for i := 0; i < len(cfg.Nodes); i++ {
-		if uint64(i) == id {
+		if uint64(i)+1 == id {
 			continue
 		}
 
@@ -99,8 +99,11 @@ func (n *Node) Run() error {
 
 		select {
 		case req := <-sreqout:
+			n.Raft.Lock()
+			leader := n.Raft.leader
+			n.Raft.Unlock()
 			ctx, cancel := context.WithTimeout(context.Background(), TCPConnect*time.Millisecond)
-			node, _ := n.mgr.Node(n.getNodeID(req.FollowerID))
+			node, _ := n.mgr.Node(n.getNodeID(leader))
 			snapshot, err := node.RaftClient.GetState(ctx, req)
 			cancel()
 
@@ -110,7 +113,11 @@ func (n *Node) Run() error {
 
 			}
 
+			// Lock to prevent Appendentries before the snapshot has
+			// been applied.
+			n.Raft.Lock()
 			n.Raft.restoreCh <- snapshot
+			n.Raft.Unlock()
 
 		case req := <-rvreqout:
 			ctx, cancel := context.WithTimeout(context.Background(), TCPHeartbeat*time.Millisecond)
@@ -176,19 +183,19 @@ func (n *Node) Run() error {
 				continue
 			}
 
-			node := n.getNodeID(creq.followerID)
+			nodeID := n.getNodeID(creq.followerID)
 			// We use 2 peers as we need to count the leader.
-			single, err := n.mgr.NewConfiguration([]uint32{node}, NewQuorumSpec(2))
+			single, err := n.mgr.NewConfiguration([]uint32{nodeID}, NewQuorumSpec(2))
 
 			if err != nil {
-				panic(fmt.Sprintf("tried to catch up node %d->%d: %v", creq.followerID, node, err))
+				panic(fmt.Sprintf("tried to catch up node %d->%d: %v", creq.followerID, nodeID, err))
 			}
 
 			tmpSet := make([]uint32, len(oldSet)-1)
 
 			var i int
 			for _, id := range oldSet {
-				if id == node {
+				if id == nodeID {
 					continue
 				}
 
@@ -209,16 +216,13 @@ func (n *Node) Run() error {
 			}
 
 			matchIndex := make(chan uint64)
-			n.catchingUp[node] = matchIndex
+			n.catchingUp[nodeID] = matchIndex
 			go n.doCatchUp(single, creq.nextIndex, matchIndex)
 		}
 	}
 }
 
 func (n *Node) addBackNode(nodeID uint32) {
-	n.Raft.Lock()
-	n.Raft.catchingUp = false
-	n.Raft.Unlock()
 	delete(n.catchingUp, nodeID)
 
 	newSet := append(n.conf.NodeIDs(), nodeID)
@@ -243,6 +247,7 @@ func (n *Node) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) 
 	return n.Raft.HandleAppendEntriesRequest(req), nil
 }
 
+// GetState implements gorums.RaftServer.
 func (n *Node) GetState(ctx context.Context, req *pb.SnapshotRequest) (*commonpb.Snapshot, error) {
 	future := make(chan *commonpb.Snapshot)
 	n.Raft.snapCh <- future
@@ -250,7 +255,7 @@ func (n *Node) GetState(ctx context.Context, req *pb.SnapshotRequest) (*commonpb
 	select {
 	case snapshot := <-future:
 		n.catchUp <- &catchUpRequest{
-			nextIndex:  snapshot.Index,
+			nextIndex:  snapshot.Index + 1,
 			followerID: req.FollowerID,
 		}
 		return snapshot, nil
@@ -280,17 +285,16 @@ func (n *Node) doCatchUp(conf *gorums.Configuration, nextIndex uint64, matchInde
 
 		ctx, cancel := context.WithTimeout(context.Background(), TCPHeartbeat*time.Millisecond)
 		res, err := conf.AppendEntries(ctx, request)
+		cancel()
 
 		if err != nil {
+
 			// TODO Better error message.
 			log.Println(fmt.Sprintf("Catch-up AppendEntries failed = %v", err))
 
-			if res.AppendEntriesResponse == nil {
-				continue
-			}
+			close(matchIndex)
+			return
 		}
-
-		cancel()
 
 		response := res.AppendEntriesResponse
 
@@ -316,5 +320,5 @@ func (n *Node) doCatchUp(conf *gorums.Configuration, nextIndex uint64, matchInde
 }
 
 func (n *Node) getNodeID(raftID uint64) uint32 {
-	return n.mgr.NodeIDs()[n.lookup[raftID]]
+	return n.mgr.NodeIDs()[n.lookup[raftID-1]]
 }

@@ -76,6 +76,9 @@ type Raft struct {
 	currentTerm uint64
 	votedFor    uint64
 
+	snapshotTerm  uint64
+	snapshotIndex uint64
+
 	sm raft.StateMachine
 
 	storage Storage
@@ -154,6 +157,21 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		panic(fmt.Errorf("couldn't get VotedFor: %v", err))
 	}
 
+	var commitIndex uint64
+	var appliedIndex uint64
+	var snapshotTerm uint64
+	var snapshotIndex uint64
+	snapshot, err := cfg.Storage.GetSnapshot()
+
+	// Restore state machine if snapshot exists.
+	if err == nil {
+		sm.Restore(snapshot)
+		commitIndex = snapshot.Index
+		appliedIndex = snapshot.Index
+		snapshotTerm = snapshot.Term
+		snapshotIndex = snapshot.Index
+	}
+
 	electionTimeout := randomTimeout(cfg.ElectionTimeout)
 	heartbeat := NewTimer(cfg.HeartbeatTimeout)
 	heartbeat.Disable()
@@ -163,6 +181,10 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		id:                cfg.ID,
 		currentTerm:       term,
 		votedFor:          votedFor,
+		commitIndex:       commitIndex,
+		appliedIndex:      appliedIndex,
+		snapshotTerm:      snapshotTerm,
+		snapshotIndex:     snapshotIndex,
 		sm:                sm,
 		storage:           cfg.Storage,
 		batch:             cfg.Batch,
@@ -291,6 +313,9 @@ func (r *Raft) HandleRequestVoteRequest(req *pb.RequestVoteRequest) *pb.RequestV
 		return &pb.RequestVoteResponse{Term: r.currentTerm}
 	}
 
+	logLen := r.storage.NextIndex()
+	lastLogTerm := r.logTerm(logLen)
+
 	// We can grant a vote in the same term, as long as it's to the same
 	// candidate. This is useful if the response was lost, and the candidate
 	// sends another request.
@@ -298,11 +323,11 @@ func (r *Raft) HandleRequestVoteRequest(req *pb.RequestVoteRequest) *pb.RequestV
 
 	// If the logs have last entries with different terms, the log with the
 	// later term is more up-to-date.
-	laterTerm := req.LastLogTerm > r.logTerm(r.storage.NumEntries())
+	laterTerm := req.LastLogTerm > lastLogTerm
 
 	// If the logs end with the same term, whichever log is longer is more
 	// up-to-date.
-	longEnough := req.LastLogTerm == r.logTerm(r.storage.NumEntries()) && req.LastLogIndex >= r.storage.NumEntries()
+	longEnough := req.LastLogTerm == lastLogTerm && req.LastLogIndex >= logLen
 
 	// We can only grant a vote if: we have not voted yet, we vote for the
 	// same candidate again, or this is a pre-vote.
@@ -360,20 +385,24 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 		}
 	}
 
-	var prevEntry *commonpb.Entry
+	var prevTerm uint64
+	logLen := r.storage.NextIndex()
 
-	// TODO Wrap storage with functions that panic.
-	if req.PrevLogIndex > 0 && req.PrevLogIndex-1 < r.storage.NumEntries() {
-		var err error
-		prevEntry, err = r.storage.GetEntry(req.PrevLogIndex - 1)
+	switch {
+	case req.PrevLogIndex <= r.snapshotIndex:
+		prevTerm = r.snapshotTerm
+	case req.PrevLogIndex > 0 && req.PrevLogIndex-1 < logLen:
+		prevEntry, err := r.storage.GetEntry(req.PrevLogIndex - 1)
 
 		if err != nil {
 			panic(fmt.Errorf("couldn't retrieve entry: %v", err))
 		}
+
+		prevTerm = prevEntry.Term
 	}
 
 	// TODO Refactor so it's understandable.
-	success := req.PrevLogIndex == 0 || (req.PrevLogIndex-1 < r.storage.NumEntries() && prevEntry.Term == req.PrevLogTerm)
+	success := req.PrevLogIndex == 0 || (req.PrevLogIndex-1 < logLen && prevTerm == req.PrevLogTerm)
 
 	// #A2 If RPC request or response contains term T > currentTerm: set currentTerm = T, convert to follower.
 	if req.Term > r.currentTerm {
@@ -390,13 +419,13 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 		lcd := req.PrevLogIndex + 1
 
 		for _, entry := range req.Entries {
-			if lcd == r.storage.NumEntries() || r.logTerm(lcd) != entry.Term {
+			if lcd == logLen || r.logTerm(lcd) != entry.Term {
 				break
 			}
 
 		}
 
-		err := r.storage.RemoveEntriesFrom(lcd - 1)
+		err := r.storage.RemoveEntries(lcd-1, logLen)
 
 		if err != nil {
 			panic(fmt.Errorf("couldn't remove excessive entries: %v", err))
@@ -427,6 +456,14 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	}
 
 	if !success && !r.catchingUp {
+		// Allow leader to be set on unsuccessful if there is no
+		// previous leader.
+		if r.leader == None {
+			r.leader = req.LeaderID
+			r.heardFromLeader = true
+			r.seenLeader = true
+		}
+
 		r.catchingUp = true
 		go func() {
 			r.sreqout <- &pb.SnapshotRequest{FollowerID: r.id}
@@ -435,7 +472,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 
 	return &pb.AppendEntriesResponse{
 		Term:       req.Term,
-		MatchIndex: r.storage.NumEntries(),
+		MatchIndex: logLen,
 		Success:    success,
 	}
 }
@@ -572,9 +609,55 @@ func (r *Raft) runStateMachine() {
 		case future := <-r.snapCh:
 			future <- r.sm.Snapshot()
 		case snapshot := <-r.restoreCh:
+			// Disable election timeout as we are not handling
+			// append entries while applying the snapshot.
+			r.election.Disable()
+
+			// Snapshot might be nil if the request failed.
+			if snapshot == nil {
+				r.catchingUp = false
+				r.election.Restart()
+				continue
+			}
+
+			// Discard old snapshot.
+			if snapshot.Term < r.currentTerm || snapshot.Index < r.storage.FirstIndex() {
+				r.catchingUp = false
+				r.election.Restart()
+				continue
+			}
+
+			// If last entry in snapshot exists in our log.
+			log.Println(snapshot.Index, r.storage.NextIndex())
+			if snapshot.Index < r.storage.NextIndex() {
+				entry, err := r.storage.GetEntry(snapshot.Index)
+
+				if err != nil {
+					panic(fmt.Errorf("couldn't retrieve entry: %v", err))
+				}
+
+				// Snapshot is already a prefix of our log, so
+				// discard it.
+				if entry.Term == snapshot.Term {
+					r.catchingUp = false
+					r.election.Restart()
+					continue
+				}
+			}
+
+			// Restore state machine using snapshots contents.
 			r.sm.Restore(snapshot)
 			r.commitIndex = snapshot.Index
 			r.appliedIndex = snapshot.Index
+			r.snapshotTerm = snapshot.Term
+			r.snapshotIndex = snapshot.Index
+			r.becomeFollower(snapshot.Term)
+
+			if err := r.storage.SetSnapshot(snapshot); err != nil {
+				panic(fmt.Errorf("couldn't save snapshot: %v", err))
+			}
+
+			r.catchingUp = false
 		}
 	}
 }
@@ -615,12 +698,14 @@ func (r *Raft) startElection() {
 		r.logger.log(fmt.Sprintf("Starting %s election for term %d", pre, term))
 	}
 
+	logLen := r.storage.NextIndex()
+
 	// #C4 Send RequestVote RPCs to all other servers.
 	r.rvreqout <- &pb.RequestVoteRequest{
 		CandidateID:  r.id,
 		Term:         term,
-		LastLogTerm:  r.logTerm(r.storage.NumEntries()),
-		LastLogIndex: r.storage.NumEntries(),
+		LastLogTerm:  r.logTerm(logLen),
+		LastLogIndex: logLen,
 		PreVote:      r.preElection,
 	}
 
@@ -672,11 +757,13 @@ func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 			r.logger.log(fmt.Sprintf("Elected leader for term %d", r.currentTerm))
 		}
 
+		logLen := r.storage.NextIndex()
+
 		r.state = Leader
 		r.leader = r.id
 		r.seenLeader = true
 		r.heardFromLeader = true
-		r.majorityNextIndex = r.storage.NumEntries() + 1
+		r.majorityNextIndex = logLen + 1
 		r.pending = list.New()
 		r.pendingReads = nil
 
@@ -724,7 +811,8 @@ func (r *Raft) sendAppendEntries() {
 	}
 
 	var toSave []*commonpb.Entry
-	assignIndex := r.storage.NumEntries() + 1
+	logLen := r.storage.NextIndex()
+	assignIndex := logLen + 1
 
 LOOP:
 	for i := r.maxAppendEntries; i > 0; i-- {
@@ -760,9 +848,10 @@ func (r *Raft) getNextEntries(nextIndex uint64) []*commonpb.Entry {
 	var entries []*commonpb.Entry
 
 	next := nextIndex - 1
+	logLen := r.storage.NextIndex()
 
-	if r.storage.NumEntries() > next {
-		maxEntries := min(next+r.maxAppendEntries, r.storage.NumEntries())
+	if logLen > next {
+		maxEntries := min(next+r.maxAppendEntries, logLen)
 
 		if !r.batch {
 			maxEntries = next + 1
@@ -877,7 +966,7 @@ func (r *Raft) getHint() uint32 {
 }
 
 func (r *Raft) logTerm(index uint64) uint64 {
-	if index < 1 || index > r.storage.NumEntries() {
+	if index < 1 || index > r.storage.NextIndex() {
 		return 0
 	}
 
