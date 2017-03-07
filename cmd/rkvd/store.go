@@ -36,9 +36,7 @@ func NewStore() *Store {
 		sessions:    iradix.New(),
 		pendingCmds: make(map[uint64]*Cmds),
 		snapTimer:   time.NewTimer(SnapTick),
-		// Important that Index == 1, nextIndex starts at 1, also 0 - 1
-		// will overflow uint64.
-		snapshot: unsafe.Pointer(&commonpb.Snapshot{Index: 1}),
+		snapshot:    unsafe.Pointer(&commonpb.Snapshot{}),
 	}
 }
 
