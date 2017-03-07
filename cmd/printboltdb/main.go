@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/relab/raft/commonpb"
 	"github.com/relab/raft/raftgorums"
 )
 
@@ -25,12 +26,18 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Found: %d entries.\n", storage.NumEntries())
+	fmt.Printf("Found: %d entries.\n", storage.NextIndex()-storage.FirstIndex())
 
-	entries, err := storage.GetEntries(0, storage.NumEntries())
+	entries := make([]*commonpb.Entry, storage.NextIndex()-storage.FirstIndex())
 
-	if err != nil {
-		log.Fatal(err)
+	for i := storage.FirstIndex(); i < storage.NextIndex(); i++ {
+		entry, err := storage.GetEntry(i)
+
+		if err != nil {
+			entry = &commonpb.Entry{Data: []byte("missing")}
+		}
+
+		entries[i-storage.FirstIndex()] = entry
 	}
 
 	for _, entry := range entries {
