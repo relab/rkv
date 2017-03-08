@@ -71,13 +71,7 @@ func (s *Service) Insert(ctx context.Context, req *rkvpb.InsertRequest) (*rkvpb.
 	}
 
 	select {
-	case res := <-future.Result():
-		err, ok := res.(error)
-
-		if ok {
-			return nil, err
-		}
-
+	case <-future.Result():
 		return &rkvpb.InsertResponse{Ok: true}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
