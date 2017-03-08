@@ -25,8 +25,9 @@ type Store struct {
 	sessions    *iradix.Tree
 	pendingCmds map[uint64]*Cmds
 
-	snapTimer *time.Timer
-	snapshot  unsafe.Pointer // *commonpb.Snapshot
+	snapTimer  *time.Timer
+	snapshot   unsafe.Pointer // *commonpb.Snapshot
+	snapshotCh chan *commonpb.Snapshot
 }
 
 // NewStore initializes and returns a *Store.
@@ -37,6 +38,7 @@ func NewStore() *Store {
 		pendingCmds: make(map[uint64]*Cmds),
 		snapTimer:   time.NewTimer(SnapTick),
 		snapshot:    unsafe.Pointer(&commonpb.Snapshot{}),
+		snapshotCh:  make(chan *commonpb.Snapshot),
 	}
 }
 
@@ -174,9 +176,8 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) (interface{}, bool) {
 }
 
 // Snapshot implements raft.StateMachine.
-func (s *Store) Snapshot() *commonpb.Snapshot {
-	snapshot := (*commonpb.Snapshot)(atomic.LoadPointer(&s.snapshot))
-	return snapshot
+func (s *Store) Snapshot() <-chan *commonpb.Snapshot {
+	return s.snapshotCh
 }
 
 func (s *Store) takeSnapshot(old unsafe.Pointer, term, index uint64, iterKvs, iterSessions *iradix.Iterator) {
@@ -219,13 +220,20 @@ func (s *Store) takeSnapshot(old unsafe.Pointer, term, index uint64, iterKvs, it
 
 	fmt.Println("Snapshot size:", len(b), "bytes")
 
+	snapshot := &commonpb.Snapshot{
+		LastIncludedIndex: index,
+		LastIncludedTerm:  term,
+		Data:              b,
+	}
+
 	// This is supposed to prevent a snapshot in progress from overwriting a
 	// call to Restore.
-	atomic.CompareAndSwapPointer(&s.snapshot, old, unsafe.Pointer(&commonpb.Snapshot{
-		Term:  term,
-		Index: index,
-		Data:  b,
-	}))
+	ok := atomic.CompareAndSwapPointer(&s.snapshot, old, unsafe.Pointer(snapshot))
+
+	if ok {
+		s.snapshotCh <- snapshot
+	}
+
 	s.snapTimer = time.NewTimer(SnapTick)
 }
 
