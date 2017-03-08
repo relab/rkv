@@ -42,6 +42,12 @@ message AppendEntriesResponse {
   bool success = 3;
 }
 
-message SnapshotRequest {
+message InstallSnapshotResponse {
+  uint64 term = 1;
+}
+
+message CatchMeUpRequest {
   uint64 followerID = 1;
 }
+
+message Empty {}

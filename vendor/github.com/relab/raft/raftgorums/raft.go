@@ -118,18 +118,29 @@ type Raft struct {
 	pendingReads []*raft.EntryFuture
 
 	applyCh   chan *entryFuture
-	snapCh    chan chan<- *commonpb.Snapshot
 	restoreCh chan *commonpb.Snapshot
 
-	catchingUp bool
+	currentSnapshot *commonpb.Snapshot
 
 	batch bool
 
 	rvreqout chan *pb.RequestVoteRequest
 	aereqout chan *pb.AppendEntriesRequest
-	sreqout  chan *pb.SnapshotRequest
+	sreqout  chan *snapshotRequest
+	nextcu   time.Time
+	cureqout chan *catchUpRequest
 
 	logger *Logger
+}
+
+type snapshotRequest struct {
+	followerID uint64
+
+	snapshot *commonpb.Snapshot
+}
+
+type catchUpRequest struct {
+	leaderID uint64
 }
 
 type entryFuture struct {
@@ -157,21 +168,6 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		panic(fmt.Errorf("couldn't get VotedFor: %v", err))
 	}
 
-	var commitIndex uint64
-	var appliedIndex uint64
-	var snapshotTerm uint64
-	var snapshotIndex uint64
-	snapshot, err := cfg.Storage.GetSnapshot()
-
-	// Restore state machine if snapshot exists.
-	if err == nil {
-		sm.Restore(snapshot)
-		commitIndex = snapshot.Index
-		appliedIndex = snapshot.Index
-		snapshotTerm = snapshot.Term
-		snapshotIndex = snapshot.Index
-	}
-
 	electionTimeout := randomTimeout(cfg.ElectionTimeout)
 	heartbeat := NewTimer(cfg.HeartbeatTimeout)
 	heartbeat.Disable()
@@ -181,10 +177,6 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		id:                cfg.ID,
 		currentTerm:       term,
 		votedFor:          votedFor,
-		commitIndex:       commitIndex,
-		appliedIndex:      appliedIndex,
-		snapshotTerm:      snapshotTerm,
-		snapshotIndex:     snapshotIndex,
 		sm:                sm,
 		storage:           cfg.Storage,
 		batch:             cfg.Batch,
@@ -203,15 +195,23 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		maxAppendEntries:  cfg.MaxAppendEntries,
 		queue:             make(chan *raft.EntryFuture, BufferSize),
 		applyCh:           make(chan *entryFuture, 128),
-		snapCh:            make(chan chan<- *commonpb.Snapshot),
-		restoreCh:         make(chan *commonpb.Snapshot),
-		sreqout:           make(chan *pb.SnapshotRequest),
+		restoreCh:         make(chan *commonpb.Snapshot, 1),
+		sreqout:           make(chan *snapshotRequest, 1),
+		cureqout:          make(chan *catchUpRequest, 1),
 		rvreqout:          make(chan *pb.RequestVoteRequest, 128),
-		aereqout:          make(chan *pb.AppendEntriesRequest, BufferSize),
+		aereqout:          make(chan *pb.AppendEntriesRequest, 128),
 		logger:            &Logger{cfg.ID, cfg.Logger},
 	}
 
 	r.logger.Printf("ElectionTimeout: %v", r.electionTimeout)
+
+	snapshot, err := cfg.Storage.GetSnapshot()
+
+	// Restore state machine if snapshot exists.
+	if err == nil {
+		r.setSnapshot(snapshot)
+		r.restoreFromSnapshot()
+	}
 
 	return r
 }
@@ -232,8 +232,14 @@ func (r *Raft) AppendEntriesRequestChan() chan *pb.AppendEntriesRequest {
 
 // SnapshotRequestChan returns a channel for outgoing SnapshotRequests. It's the
 // implementers responsibility to make sure these requests are delivered.
-func (r *Raft) SnapshotRequestChan() chan *pb.SnapshotRequest {
+func (r *Raft) snapshotRequestChan() chan *snapshotRequest {
 	return r.sreqout
+}
+
+// CatchUpRequestChan returns a channel for outgoing CatchUpRequests. It's the
+// implementers responsibility to make sure these requests are delivered.
+func (r *Raft) catchUpRequestChan() chan *catchUpRequest {
+	return r.cureqout
 }
 
 // Run handles timeouts.
@@ -305,9 +311,10 @@ func (r *Raft) HandleRequestVoteRequest(req *pb.RequestVoteRequest) *pb.RequestV
 		r.becomeFollower(req.Term)
 	}
 
+	// If voted == true, that implies req.Term == r.currentTerm.
 	voted := r.votedFor != None
 
-	if req.PreVote && (r.heardFromLeader || (voted && req.Term == r.currentTerm)) {
+	if req.PreVote && (r.heardFromLeader || voted) {
 		// We don't grant pre-votes if we have recently heard from a
 		// leader or already voted in the pre-term.
 		return &pb.RequestVoteResponse{Term: r.currentTerm}
@@ -355,7 +362,6 @@ func (r *Raft) HandleRequestVoteRequest(req *pb.RequestVoteRequest) *pb.RequestV
 		// AppendEntries RPC from current leader or granting a vote to
 		// candidate: convert to candidate. Here we are granting a vote
 		// to a candidate so we reset the election timeout.
-		r.baseline.Restart()
 		r.election.Restart()
 		r.heartbeat.Disable()
 		r.cycle()
@@ -381,7 +387,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	if req.Term < r.currentTerm {
 		return &pb.AppendEntriesResponse{
 			Success: false,
-			Term:    req.Term,
+			Term:    r.currentTerm,
 		}
 	}
 
@@ -413,8 +419,9 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 
 	if success {
 		r.leader = req.LeaderID
-		r.heardFromLeader = true
 		r.seenLeader = true
+		r.heardFromLeader = true
+		r.baseline.Restart()
 
 		lcd := req.PrevLogIndex + 1
 
@@ -455,19 +462,13 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 		}
 	}
 
-	if !success && !r.catchingUp {
-		// Allow leader to be set on unsuccessful if there is no
-		// previous leader.
-		if r.leader == None {
-			r.leader = req.LeaderID
-			r.heardFromLeader = true
-			r.seenLeader = true
+	now := time.Now()
+	if !success && now.After(r.nextcu) {
+		// Prevent repeated catch-up requests.
+		r.nextcu = now.Add(20 * time.Second)
+		r.cureqout <- &catchUpRequest{
+			req.LeaderID,
 		}
-
-		r.catchingUp = true
-		go func() {
-			r.sreqout <- &pb.SnapshotRequest{FollowerID: r.id}
-		}()
 	}
 
 	return &pb.AppendEntriesResponse{
@@ -562,6 +563,12 @@ func (r *Raft) advanceCommitIndex() {
 func (r *Raft) newCommit(old uint64) {
 	// TODO Change to GetEntries -> then ring buffer.
 	for i := old; i < r.commitIndex; i++ {
+		if i <= r.appliedIndex {
+			continue
+		}
+
+		r.appliedIndex = max(r.appliedIndex, i)
+
 		switch r.state {
 		case Leader:
 			e := r.pending.Front()
@@ -585,81 +592,75 @@ func (r *Raft) newCommit(old uint64) {
 }
 
 func (r *Raft) runStateMachine() {
-	apply := func(entry *commonpb.Entry, future *raft.EntryFuture) {
+	apply := func(commit *entryFuture) {
 		var res interface{}
-		if entry.EntryType != commonpb.EntryInternal {
-			res = r.sm.Apply(entry)
-			r.appliedIndex = entry.Index
+		if commit.entry.EntryType != commonpb.EntryInternal {
+			res = r.sm.Apply(commit.entry)
 		}
 
-		if future != nil {
-			future.Respond(res)
+		if commit.future != nil {
+			commit.future.Respond(res)
 		}
 	}
+
+	restore := func(snapshot *commonpb.Snapshot) {
+		r.Lock()
+		defer r.Unlock()
+		r.logger.log(fmt.Sprintf("received snapshot index:%d term:%d", snapshot.LastIncludedIndex, snapshot.LastIncludedTerm))
+
+		// Disable baseline/election timeout as we are not handling
+		// append entries while applying the snapshot.
+		r.baseline.Disable()
+		defer r.baseline.Restart()
+		r.election.Disable()
+		defer r.election.Restart()
+
+		r.logger.log(fmt.Sprintf("restoring state machine from snapshot index:%d term:%d",
+			snapshot.LastIncludedIndex, snapshot.LastIncludedTerm,
+		))
+
+		r.setSnapshot(snapshot)
+		r.restoreFromSnapshot()
+	}
+
+	snapCh := r.sm.Snapshot()
 
 	for {
 		select {
 		case commit := <-r.applyCh:
-			// Reads have Index set to 0, so don't skip those.
-			if commit.entry.Index > 0 && commit.entry.Index <= r.appliedIndex {
-				continue
-			}
-
-			apply(commit.entry, commit.future)
-		case future := <-r.snapCh:
-			future <- r.sm.Snapshot()
+			apply(commit)
 		case snapshot := <-r.restoreCh:
-			// Disable election timeout as we are not handling
-			// append entries while applying the snapshot.
-			r.election.Disable()
-
-			// Snapshot might be nil if the request failed.
-			if snapshot == nil {
-				r.catchingUp = false
-				r.election.Restart()
-				continue
-			}
-
-			// Discard old snapshot.
-			if snapshot.Term < r.currentTerm || snapshot.Index < r.storage.FirstIndex() {
-				r.catchingUp = false
-				r.election.Restart()
-				continue
-			}
-
-			// If last entry in snapshot exists in our log.
-			log.Println(snapshot.Index, r.storage.NextIndex())
-			if snapshot.Index < r.storage.NextIndex() {
-				entry, err := r.storage.GetEntry(snapshot.Index)
-
-				if err != nil {
-					panic(fmt.Errorf("couldn't retrieve entry: %v", err))
-				}
-
-				// Snapshot is already a prefix of our log, so
-				// discard it.
-				if entry.Term == snapshot.Term {
-					r.catchingUp = false
-					r.election.Restart()
-					continue
-				}
-			}
-
-			// Restore state machine using snapshots contents.
-			r.sm.Restore(snapshot)
-			r.commitIndex = snapshot.Index
-			r.appliedIndex = snapshot.Index
-			r.snapshotTerm = snapshot.Term
-			r.snapshotIndex = snapshot.Index
-			r.becomeFollower(snapshot.Term)
-
-			if err := r.storage.SetSnapshot(snapshot); err != nil {
-				panic(fmt.Errorf("couldn't save snapshot: %v", err))
-			}
-
-			r.catchingUp = false
+			restore(snapshot)
+		case snapshot := <-snapCh:
+			r.Lock()
+			r.setSnapshot(snapshot)
+			r.Unlock()
 		}
 	}
+}
+
+// TODO Assumes caller holds lock on Raft.
+func (r *Raft) setSnapshot(snapshot *commonpb.Snapshot) {
+	if err := r.storage.SetSnapshot(snapshot); err != nil {
+		panic(fmt.Errorf("couldn't save snapshot: %v", err))
+	}
+
+	// TODO Clean log.
+
+	r.currentSnapshot = snapshot
+	r.snapshotTerm = snapshot.LastIncludedTerm
+	r.snapshotIndex = snapshot.LastIncludedIndex
+}
+
+// TODO Assumes caller holds lock on Raft.
+// Call after snapshot has been saved to disk.
+func (r *Raft) restoreFromSnapshot() {
+	snapshot := r.currentSnapshot
+
+	r.sm.Restore(snapshot)
+	r.commitIndex = snapshot.LastIncludedIndex
+	r.appliedIndex = snapshot.LastIncludedIndex
+	r.becomeFollower(snapshot.LastIncludedTerm)
 }
 
 func (r *Raft) startElection() {
@@ -762,7 +763,8 @@ func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 		r.state = Leader
 		r.leader = r.id
 		r.seenLeader = true
-		r.heardFromLeader = true
+		r.heardFromLeader = false
+		r.baseline.Disable()
 		r.majorityNextIndex = logLen + 1
 		r.pending = list.New()
 		r.pendingReads = nil
@@ -788,7 +790,6 @@ func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 
 		// #L1 Upon election: send initial empty (no-op) AppendEntries
 		// RPCs (heartbeat) to each server.
-		r.baseline.Disable()
 		r.election.Restart()
 		r.heartbeat.Restart()
 		r.cycle()
@@ -870,11 +871,20 @@ func (r *Raft) getNextEntries(nextIndex uint64) []*commonpb.Entry {
 
 // TODO Assumes caller holds lock on Raft.
 func (r *Raft) getAppendEntriesRequest(nextIndex uint64, entries []*commonpb.Entry) *pb.AppendEntriesRequest {
+	var prevTerm, prevIndex uint64 = 0, nextIndex - 1
+
+	if prevIndex == r.snapshotIndex {
+		prevIndex = r.snapshotIndex
+		prevTerm = r.snapshotTerm
+	} else {
+		prevTerm = r.logTerm(prevIndex)
+	}
+
 	return &pb.AppendEntriesRequest{
 		LeaderID:     r.id,
 		Term:         r.currentTerm,
-		PrevLogIndex: nextIndex - 1,
-		PrevLogTerm:  r.logTerm(nextIndex - 1),
+		PrevLogIndex: prevIndex,
+		PrevLogTerm:  prevTerm,
 		CommitIndex:  r.commitIndex,
 		Entries:      entries,
 	}
@@ -944,8 +954,7 @@ func (r *Raft) becomeFollower(term uint64) {
 		}
 	}
 
-	// Reset election and baseline timeouts and disable heartbeat.
-	r.baseline.Restart()
+	// Reset election timeout and disable heartbeat.
 	r.election.Restart()
 	r.heartbeat.Disable()
 	r.cycle()
