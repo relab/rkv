@@ -311,10 +311,9 @@ func (r *Raft) HandleRequestVoteRequest(req *pb.RequestVoteRequest) *pb.RequestV
 		r.becomeFollower(req.Term)
 	}
 
-	// If voted == true, that implies req.Term == r.currentTerm.
 	voted := r.votedFor != None
 
-	if req.PreVote && (r.heardFromLeader || voted) {
+	if req.PreVote && (r.heardFromLeader || (voted && req.Term == r.currentTerm)) {
 		// We don't grant pre-votes if we have recently heard from a
 		// leader or already voted in the pre-term.
 		return &pb.RequestVoteResponse{Term: r.currentTerm}
@@ -362,6 +361,7 @@ func (r *Raft) HandleRequestVoteRequest(req *pb.RequestVoteRequest) *pb.RequestV
 		// AppendEntries RPC from current leader or granting a vote to
 		// candidate: convert to candidate. Here we are granting a vote
 		// to a candidate so we reset the election timeout.
+		r.baseline.Restart()
 		r.election.Restart()
 		r.heartbeat.Disable()
 		r.cycle()
@@ -419,9 +419,8 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 
 	if success {
 		r.leader = req.LeaderID
-		r.seenLeader = true
 		r.heardFromLeader = true
-		r.baseline.Restart()
+		r.seenLeader = true
 
 		lcd := req.PrevLogIndex + 1
 
@@ -464,6 +463,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 
 	now := time.Now()
 	if !success && now.After(r.nextcu) {
+		r.logger.log("initiated catch-up request")
 		// Prevent repeated catch-up requests.
 		r.nextcu = now.Add(20 * time.Second)
 		r.cureqout <- &catchUpRequest{
@@ -473,7 +473,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 
 	return &pb.AppendEntriesResponse{
 		Term:       req.Term,
-		MatchIndex: logLen,
+		MatchIndex: r.storage.NextIndex(),
 		Success:    success,
 	}
 }
@@ -563,7 +563,7 @@ func (r *Raft) advanceCommitIndex() {
 func (r *Raft) newCommit(old uint64) {
 	// TODO Change to GetEntries -> then ring buffer.
 	for i := old; i < r.commitIndex; i++ {
-		if i <= r.appliedIndex {
+		if i < r.appliedIndex {
 			continue
 		}
 
@@ -641,6 +641,11 @@ func (r *Raft) runStateMachine() {
 
 // TODO Assumes caller holds lock on Raft.
 func (r *Raft) setSnapshot(snapshot *commonpb.Snapshot) {
+	start := time.Now()
+	defer func() {
+		fmt.Println("Writing snapshot to disk took:", time.Now().Sub(start))
+	}()
+
 	if err := r.storage.SetSnapshot(snapshot); err != nil {
 		panic(fmt.Errorf("couldn't save snapshot: %v", err))
 	}
@@ -660,6 +665,7 @@ func (r *Raft) restoreFromSnapshot() {
 	r.sm.Restore(snapshot)
 	r.commitIndex = snapshot.LastIncludedIndex
 	r.appliedIndex = snapshot.LastIncludedIndex
+	r.majorityNextIndex = r.snapshotIndex + 1
 	r.becomeFollower(snapshot.LastIncludedTerm)
 }
 
@@ -699,14 +705,22 @@ func (r *Raft) startElection() {
 		r.logger.log(fmt.Sprintf("Starting %s election for term %d", pre, term))
 	}
 
-	logLen := r.storage.NextIndex()
+	lastLogIndex := r.storage.NextIndex()
+	var lastLogTerm uint64
+
+	if lastLogIndex == r.snapshotIndex {
+		lastLogIndex = r.snapshotIndex
+		lastLogTerm = r.snapshotTerm
+	} else {
+		lastLogTerm = r.logTerm(lastLogIndex)
+	}
 
 	// #C4 Send RequestVote RPCs to all other servers.
 	r.rvreqout <- &pb.RequestVoteRequest{
 		CandidateID:  r.id,
 		Term:         term,
-		LastLogTerm:  r.logTerm(logLen),
-		LastLogIndex: logLen,
+		LastLogIndex: lastLogIndex,
+		LastLogTerm:  lastLogTerm,
 		PreVote:      r.preElection,
 	}
 
@@ -763,8 +777,7 @@ func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 		r.state = Leader
 		r.leader = r.id
 		r.seenLeader = true
-		r.heardFromLeader = false
-		r.baseline.Disable()
+		r.heardFromLeader = true
 		r.majorityNextIndex = logLen + 1
 		r.pending = list.New()
 		r.pendingReads = nil
@@ -790,6 +803,7 @@ func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 
 		// #L1 Upon election: send initial empty (no-op) AppendEntries
 		// RPCs (heartbeat) to each server.
+		r.baseline.Disable()
 		r.election.Restart()
 		r.heartbeat.Restart()
 		r.cycle()
@@ -855,6 +869,9 @@ func (r *Raft) getNextEntries(nextIndex uint64) []*commonpb.Entry {
 		maxEntries := min(next+r.maxAppendEntries, logLen)
 
 		if !r.batch {
+			// This is ok since GetEntries is exclusive of the last
+			// index, meaning maxEntries == logLen won't be
+			// out-of-bounds.
 			maxEntries = next + 1
 		}
 
@@ -954,7 +971,8 @@ func (r *Raft) becomeFollower(term uint64) {
 		}
 	}
 
-	// Reset election timeout and disable heartbeat.
+	// Reset election and baseline timeouts and disable heartbeat.
+	r.baseline.Restart()
 	r.election.Restart()
 	r.heartbeat.Disable()
 	r.cycle()

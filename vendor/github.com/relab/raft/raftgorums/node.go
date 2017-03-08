@@ -152,19 +152,30 @@ func (n *Node) Run() error {
 					}
 				}()
 
-				ctx, cancel := context.WithTimeout(context.Background(), TCPConnect*time.Millisecond)
-				res, err := follower.RaftClient.InstallSnapshot(ctx, req.snapshot)
-				cancel()
+				var nextIndex uint64 = 1
 
-				if err != nil {
-					// TODO Better error message.
-					log.Println(fmt.Sprintf("InstallSnapshot failed = %v", err))
-					return
-				}
+				// Only send snapshot if there is one present.
+				if req.snapshot != nil {
+					log.Printf("sending snapshot index:%d term:%d\n",
+						req.snapshot.LastIncludedIndex, req.snapshot.LastIncludedTerm,
+					)
 
-				// If follower is in a higher term, return.
-				if !n.Raft.HandleInstallSnapshotResponse(res) {
-					return
+					ctx, cancel := context.WithTimeout(context.Background(), TCPConnect*time.Millisecond)
+					res, err := follower.RaftClient.InstallSnapshot(ctx, req.snapshot)
+					cancel()
+
+					if err != nil {
+						// TODO Better error message.
+						log.Println(fmt.Sprintf("InstallSnapshot failed = %v", err))
+						return
+					}
+
+					// If follower is in a higher term, return.
+					if !n.Raft.HandleInstallSnapshotResponse(res) {
+						return
+					}
+
+					nextIndex = req.snapshot.LastIncludedIndex + 1
 				}
 
 				// We use 2 peers as we need to count an implicit leader.
@@ -176,7 +187,7 @@ func (n *Node) Run() error {
 					))
 				}
 
-				n.Raft.catchUp(single, req.snapshot.LastIncludedIndex+1, matchCh)
+				n.Raft.catchUp(single, nextIndex, matchCh)
 			}()
 
 		case req := <-rvreqout:
