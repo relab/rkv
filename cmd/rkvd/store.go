@@ -59,6 +59,7 @@ func (s *Store) Apply(entry *commonpb.Entry) interface{} {
 		if mutated {
 			s.maybeSnapshot(entry)
 		}
+
 		return res
 	case commonpb.EntryConfChange:
 		// TODO s.snapshotMaybe(entry)?
@@ -116,11 +117,22 @@ func (s *Store) applyStore(i uint64, cmd *rkvpb.Cmd) (interface{}, bool) {
 
 		txn := s.kvs.Txn()
 
-		if req.ClientSeq != nextSeq+1 {
-			s.PushCmd(req.ClientID, &req)
-		} else {
+		switch {
+		// Request is next to be applied.
+		case req.ClientSeq == nextSeq+1:
 			txn.Insert([]byte(req.Key), req.Value)
 			nextSeq++
+
+		// Already applied, ignore.
+		case req.ClientSeq < nextSeq+1:
+			// We could return here, but we would need to commit the
+			// txn anyways. And we should return true, even though
+			// the state machine was not actually mutated, the
+			// requests index is set.
+
+		// Future request, queue it.
+		default:
+			s.PushCmd(req.ClientID, &req)
 		}
 
 		for s.HasCmd(req.ClientID, nextSeq+1) {
