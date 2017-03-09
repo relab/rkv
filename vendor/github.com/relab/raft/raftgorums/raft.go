@@ -83,7 +83,7 @@ type Raft struct {
 
 	sm raft.StateMachine
 
-	storage Storage
+	storage *panicStorage
 
 	seenLeader      bool
 	heardFromLeader bool
@@ -154,17 +154,10 @@ type entryFuture struct {
 func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 	// TODO Validate config, i.e., make sure to sensible defaults if an
 	// option is not configured.
-	term, err := cfg.Storage.Get(KeyTerm)
+	storage := &panicStorage{cfg.Storage, cfg.Logger}
 
-	if err != nil {
-		panic(fmt.Errorf("couldn't get Term: %v", err))
-	}
-
-	votedFor, err := cfg.Storage.Get(KeyVotedFor)
-
-	if err != nil {
-		panic(fmt.Errorf("couldn't get VotedFor: %v", err))
-	}
+	term := storage.Get(KeyTerm)
+	votedFor := storage.Get(KeyVotedFor)
 
 	electionTimeout := randomTimeout(cfg.ElectionTimeout)
 	heartbeat := NewTimer(cfg.HeartbeatTimeout)
@@ -176,7 +169,7 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		currentTerm:       term,
 		votedFor:          votedFor,
 		sm:                sm,
-		storage:           cfg.Storage,
+		storage:           storage,
 		batch:             cfg.Batch,
 		addrs:             cfg.Nodes,
 		majorityNextIndex: 1,
@@ -289,12 +282,16 @@ func (r *Raft) HandleRequestVoteRequest(req *pb.RequestVoteRequest) *pb.RequestV
 	r.Lock()
 	defer r.Unlock()
 
-	reqLogger := r.logger.WithFields(logrus.Fields{
-		"currentterm": r.currentTerm,
-		"requestterm": req.Term,
-		"prevote":     req.PreVote,
-	})
-	reqLogger.Infoln("Got vote request")
+	var voteGranted bool
+	defer func() {
+		r.logger.WithFields(logrus.Fields{
+			"currentterm": r.currentTerm,
+			"requestterm": req.Term,
+			"prevote":     req.PreVote,
+			"candidateid": req.CandidateID,
+			"votegranted": voteGranted,
+		}).Infoln("Got vote request")
+	}()
 
 	// #RV1 Reply false if term < currentTerm.
 	if req.Term < r.currentTerm {
@@ -336,19 +333,15 @@ func (r *Raft) HandleRequestVoteRequest(req *pb.RequestVoteRequest) *pb.RequestV
 
 	// #RV2 If votedFor is null or candidateId, and candidate's log is at
 	// least as up-to-date as receiver's log, grant vote.
-	if canGrantVote && (laterTerm || longEnough) {
-		reqLogger.WithField("votegranted", true).Infoln("Vote granted")
+	voteGranted = canGrantVote && (laterTerm || longEnough)
 
+	if voteGranted {
 		if req.PreVote {
 			return &pb.RequestVoteResponse{VoteGranted: true, Term: req.Term}
 		}
 
 		r.votedFor = req.CandidateID
-		err := r.storage.Set(KeyVotedFor, req.CandidateID)
-
-		if err != nil {
-			panic(fmt.Errorf("couldn't save VotedFor: %v", err))
-		}
+		r.storage.Set(KeyVotedFor, req.CandidateID)
 
 		// #F2 If election timeout elapses without receiving
 		// AppendEntries RPC from current leader or granting a vote to
@@ -361,8 +354,6 @@ func (r *Raft) HandleRequestVoteRequest(req *pb.RequestVoteRequest) *pb.RequestV
 
 		return &pb.RequestVoteResponse{VoteGranted: true, Term: r.currentTerm}
 	}
-
-	reqLogger.WithField("votegranted", false).Infoln("Vote NOT granted")
 
 	// #RV2 The candidate's log was not up-to-date
 	return &pb.RequestVoteResponse{Term: r.currentTerm}
@@ -399,12 +390,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	case req.PrevLogIndex <= r.snapshotIndex:
 		prevTerm = r.snapshotTerm
 	case req.PrevLogIndex > 0 && req.PrevLogIndex-1 < logLen:
-		prevEntry, err := r.storage.GetEntry(req.PrevLogIndex - 1)
-
-		if err != nil {
-			panic(fmt.Errorf("couldn't retrieve entry: %v", err))
-		}
-
+		prevEntry := r.storage.GetEntry(req.PrevLogIndex - 1)
 		prevTerm = prevEntry.Term
 	}
 
@@ -438,11 +424,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 			}
 		}
 
-		err := r.storage.StoreEntries(toSave)
-
-		if err != nil {
-			panic(fmt.Errorf("couldn't save entries: %v", err))
-		}
+		r.storage.StoreEntries(toSave)
 
 		reqLogger.WithFields(logrus.Fields{
 			"lensaved": len(toSave),
@@ -451,6 +433,11 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 
 		old := r.commitIndex
 		r.commitIndex = max(req.CommitIndex, r.commitIndex)
+
+		r.logger.WithFields(logrus.Fields{
+			"oldcommitindex": old,
+			"commitindex":    r.commitIndex,
+		}).Infoln("Set commit index")
 
 		if r.commitIndex > old {
 			r.newCommit(old)
@@ -550,6 +537,11 @@ func (r *Raft) advanceCommitIndex() {
 	}
 
 	if r.commitIndex > old {
+		r.logger.WithFields(logrus.Fields{
+			"oldcommitindex": old,
+			"commitindex":    r.commitIndex,
+		}).Infoln("Set commit index")
+
 		r.newCommit(old)
 	}
 
@@ -565,8 +557,14 @@ func (r *Raft) newCommit(old uint64) {
 	// TODO Change to GetEntries -> then ring buffer.
 	for i := old; i < r.commitIndex; i++ {
 		if i < r.appliedIndex {
+			r.logger.WithField("index", i).Warningln("Already applied")
 			continue
 		}
+
+		r.logger.WithFields(logrus.Fields{
+			"oldappliedindex": r.appliedIndex,
+			"appliedindex":    i,
+		}).Infoln("Set applied index")
 
 		r.appliedIndex = i
 
@@ -581,12 +579,7 @@ func (r *Raft) newCommit(old uint64) {
 			}
 			fallthrough
 		default:
-			committed, err := r.storage.GetEntry(i)
-
-			if err != nil {
-				panic(fmt.Errorf("couldn't retrieve entry: %v", err))
-			}
-
+			committed := r.storage.GetEntry(i)
 			r.applyCh <- &entryFuture{committed, nil}
 		}
 	}
@@ -650,9 +643,7 @@ func (r *Raft) setSnapshot(snapshot *commonpb.Snapshot) {
 		fmt.Println("Writing snapshot to disk took:", time.Now().Sub(start))
 	}()
 
-	if err := r.storage.SetSnapshot(snapshot); err != nil {
-		panic(fmt.Errorf("couldn't save snapshot: %v", err))
-	}
+	r.storage.SetSnapshot(snapshot)
 
 	// TODO Clean log.
 
@@ -666,11 +657,18 @@ func (r *Raft) setSnapshot(snapshot *commonpb.Snapshot) {
 func (r *Raft) restoreFromSnapshot() {
 	snapshot := r.currentSnapshot
 
+	old := r.commitIndex
+
 	r.sm.Restore(snapshot)
 	r.commitIndex = snapshot.LastIncludedIndex
 	r.appliedIndex = snapshot.LastIncludedIndex
 	r.majorityNextIndex = r.snapshotIndex + 1
 	r.becomeFollower(snapshot.LastIncludedTerm)
+
+	r.logger.WithFields(logrus.Fields{
+		"oldcommitindex": old,
+		"commitindex":    r.commitIndex,
+	}).Infoln("Set commit index")
 }
 
 func (r *Raft) startElection() {
@@ -686,21 +684,11 @@ func (r *Raft) startElection() {
 		// We are now a candidate. See Raft Paper Figure 2 -> Rules for Servers -> Candidates.
 		// #C1 Increment currentTerm.
 		r.currentTerm++
-
-		err := r.storage.Set(KeyTerm, r.id)
-
-		if err != nil {
-			panic(fmt.Errorf("couldn't save Term: %v", err))
-		}
+		r.storage.Set(KeyTerm, r.id)
 
 		// #C2 Vote for self.
 		r.votedFor = r.id
-
-		err = r.storage.Set(KeyVotedFor, r.id)
-
-		if err != nil {
-			panic(fmt.Errorf("couldn't save VotedFor: %v", err))
-		}
+		r.storage.Set(KeyVotedFor, r.id)
 	}
 
 	r.logger.WithFields(logrus.Fields{
@@ -840,11 +828,7 @@ LOOP:
 		}
 	}
 
-	err := r.storage.StoreEntries(toSave)
-
-	if err != nil {
-		panic(fmt.Errorf("couldn't save entries: %v", err))
-	}
+	r.storage.StoreEntries(toSave)
 
 	// #L1
 	entries := r.getNextEntries(r.majorityNextIndex)
@@ -874,12 +858,7 @@ func (r *Raft) getNextEntries(nextIndex uint64) []*commonpb.Entry {
 			maxEntries = next + 1
 		}
 
-		var err error
-		entries, err = r.storage.GetEntries(next, maxEntries)
-
-		if err != nil {
-			panic(fmt.Errorf("couldn't retrieve entries: %v", err))
-		}
+		entries = r.storage.GetEntries(next, maxEntries)
 	}
 
 	return entries
@@ -959,16 +938,8 @@ func (r *Raft) becomeFollower(term uint64) {
 		r.currentTerm = term
 		r.votedFor = None
 
-		err := r.storage.Set(KeyTerm, term)
-
-		if err != nil {
-			panic(fmt.Errorf("couldn't save Term: %v", err))
-		}
-		err = r.storage.Set(KeyVotedFor, None)
-
-		if err != nil {
-			panic(fmt.Errorf("couldn't save VotedFor: %v", err))
-		}
+		r.storage.Set(KeyTerm, term)
+		r.storage.Set(KeyVotedFor, None)
 	}
 
 	// Reset election and baseline timeouts and disable heartbeat.
@@ -997,12 +968,7 @@ func (r *Raft) logTerm(index uint64) uint64 {
 		return 0
 	}
 
-	entry, err := r.storage.GetEntry(index - 1)
-
-	if err != nil {
-		panic(fmt.Errorf("couldn't retrieve entry: %v", err))
-	}
-
+	entry := r.storage.GetEntry(index - 1)
 	return entry.Term
 }
 
