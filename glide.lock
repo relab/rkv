@@ -1,10 +1,10 @@
-hash: 70700e6eebc5ec9d3d584c94c744ec8d81f8addc42ca3ea16cced8c252061f36
-updated: 2017-03-09T11:15:16.631195072+01:00
+hash: 1b47ed82cf8858aaf8997c7559be746f5548d1c155c959675316e9dbeefaa0f3
+updated: 2017-03-09T12:31:32.437867554+01:00
 imports:
 - name: github.com/boltdb/bolt
   version: e9cf4fae01b5a8ff89d0ec6b32f0d9c9f79aefdd
 - name: github.com/gogo/protobuf
-  version: 909568be09de550ed094403c2bf8a261b5bb730a
+  version: 100ba4e885062801d56799d78530b73b178a78f3
   subpackages:
   - gogoproto
   - proto
@@ -22,16 +22,16 @@ imports:
 - name: github.com/relab/gorums
   version: 8ed594959a32dc96b3580859f3350a7599c45cc1
 - name: github.com/relab/raft
-  version: b4eb26171a47206bd4ebbcb837054ab1a72cfdfb
+  version: b8d1573f931821beb69d757dedbbc2d8e2cfa442
   subpackages:
   - commonpb
   - raftgorums
   - raftgorums/gorumspb
   - raftgorums/raftpb
 - name: github.com/Sirupsen/logrus
-  version: 1deb2db2a6fff8a35532079061b903c3a25eed52
+  version: 0208149b40d863d2c1a2f8fe5753096a9cf2cc8b
 - name: golang.org/x/net
-  version: 4971afdc2f162e82d185353533d3cf16188a9f4e
+  version: a6577fac2d73be281a500b310739095313165611
   subpackages:
   - context
   - http2
