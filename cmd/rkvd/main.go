@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 
 	"github.com/relab/raft/raftgorums"
 	"github.com/relab/rkv/rkvpb"
@@ -64,13 +64,13 @@ func main() {
 	storage, err := raftgorums.NewFileStorage(fmt.Sprintf("db%.2d.bolt", *id), !*recover)
 
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 	}
 
 	lis, err := net.Listen("tcp", nodes[*id-1])
 
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 	}
 
 	grpcServer := grpc.NewServer()
@@ -90,8 +90,8 @@ func main() {
 	rkvpb.RegisterRKVServer(grpcServer, service)
 
 	go func() {
-		log.Fatal(grpcServer.Serve(lis))
+		logrus.Fatal(grpcServer.Serve(lis))
 	}()
 
-	log.Fatal(node.Run())
+	logrus.Fatal(node.Run())
 }
