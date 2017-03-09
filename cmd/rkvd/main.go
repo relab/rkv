@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -53,6 +54,18 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+
+	logFile, err := os.OpenFile(
+		fmt.Sprintf("%s%sraft%.2d.log", os.TempDir(), string(filepath.Separator), *id),
+		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666,
+	)
+
+	if err != nil {
+		logrus.Fatal(err)
+	}
+
+	logger := logrus.New()
+	logger.Hooks.Add(NewLogToFileHook(logFile))
 
 	if *bench {
 		logger.Out = ioutil.Discard
