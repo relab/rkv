@@ -1,5 +1,5 @@
 hash: 1b47ed82cf8858aaf8997c7559be746f5548d1c155c959675316e9dbeefaa0f3
-updated: 2017-03-09T12:31:32.437867554+01:00
+updated: 2017-03-09T14:09:18.71812095+01:00
 imports:
 - name: github.com/boltdb/bolt
   version: e9cf4fae01b5a8ff89d0ec6b32f0d9c9f79aefdd
@@ -22,7 +22,7 @@ imports:
 - name: github.com/relab/gorums
   version: 8ed594959a32dc96b3580859f3350a7599c45cc1
 - name: github.com/relab/raft
-  version: b8d1573f931821beb69d757dedbbc2d8e2cfa442
+  version: 1a834f869b3ad6e93e01eaf0a5d100fa14177828
   subpackages:
   - commonpb
   - raftgorums
