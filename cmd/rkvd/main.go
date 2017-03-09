@@ -4,12 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net"
 	"os"
 	"strings"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/relab/raft/raftgorums"
 	"github.com/relab/rkv/rkvpb"
@@ -54,8 +55,8 @@ func main() {
 	}
 
 	if *bench {
-		log.SetOutput(ioutil.Discard)
-		silentLogger := log.New(ioutil.Discard, "", log.LstdFlags)
+		silentLogger := log.New()
+		silentLogger.Out = ioutil.Discard
 		grpclog.SetLogger(silentLogger)
 		grpc.EnableTracing = false
 	}
@@ -82,7 +83,7 @@ func main() {
 		ElectionTimeout:  *electionTimeout,
 		HeartbeatTimeout: *heartbeatTimeout,
 		MaxAppendEntries: *maxAppendEntries,
-		Logger:           log.New(os.Stderr, "raft| ", log.LstdFlags),
+		Logger:           log.New(),
 	})
 
 	service := NewService(node.Raft)
