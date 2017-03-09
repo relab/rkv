@@ -55,11 +55,11 @@ func main() {
 	}
 
 	if *bench {
-		silentLogger := log.New()
-		silentLogger.Out = ioutil.Discard
-		grpclog.SetLogger(silentLogger)
+		logger.Out = ioutil.Discard
 		grpc.EnableTracing = false
 	}
+
+	grpclog.SetLogger(logger)
 
 	storage, err := raftgorums.NewFileStorage(fmt.Sprintf("db%.2d.bolt", *id), !*recover)
 
@@ -83,7 +83,7 @@ func main() {
 		ElectionTimeout:  *electionTimeout,
 		HeartbeatTimeout: *heartbeatTimeout,
 		MaxAppendEntries: *maxAppendEntries,
-		Logger:           log.New(),
+		Logger:           logger,
 	})
 
 	service := NewService(node.Raft)
