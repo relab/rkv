@@ -1,15 +1,17 @@
 package: github.com/relab/rkv
 import:
+- package: github.com/Sirupsen/logrus
+  version: ~0.11.4
 - package: github.com/gogo/protobuf
-  version: ~0.3.0
+  version: ~0.4.0
   subpackages:
   - gogoproto
   - proto
 - package: github.com/hashicorp/go-immutable-radix
 - package: github.com/relab/raft
   subpackages:
-  - raftgorums
   - commonpb
+  - raftgorums
 - package: golang.org/x/net
   subpackages:
   - context
