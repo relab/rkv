@@ -86,6 +86,17 @@ func (c *controller) do(req request, maxRetry int, i ...int) (interface{}, error
 	}
 }
 
+type zipf struct {
+	sync.Mutex
+	zf *rand.Zipf
+}
+
+func (z *zipf) Uint64() uint64 {
+	z.Lock()
+	defer z.Unlock()
+	return z.zf.Uint64()
+}
+
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
@@ -107,7 +118,9 @@ func main() {
 	}
 
 	var n uint64 = 10000
-	z := rand.NewZipf(rand.New(rand.NewSource(99)), 1.1, 4, n)
+	z := &zipf{
+		zf: rand.NewZipf(rand.New(rand.NewSource(99)), 1.1, 4, n),
+	}
 
 	sleep := time.Second / time.Duration(*throughput)
 	var wg sync.WaitGroup
@@ -170,10 +183,11 @@ func main() {
 							return
 						}
 
-						atomic.AddUint64(&reqs, 1)
+						rr := atomic.AddUint64(&reqs, 1)
+						r := time.Duration(rr)
 						llock.Lock()
-						latency -= latency / time.Duration(reqs)
-						latency += time.Now().Sub(startRead) / time.Duration(reqs)
+						latency -= latency / r
+						latency += time.Now().Sub(startRead) / r
 						llock.Unlock()
 					}()
 				} else {
@@ -200,10 +214,11 @@ func main() {
 							return
 						}
 
-						atomic.AddUint64(&reqs, 1)
+						rr := atomic.AddUint64(&reqs, 1)
+						r := time.Duration(rr)
 						llock.Lock()
-						latency -= latency / time.Duration(reqs)
-						latency += time.Now().Sub(startRead) / time.Duration(reqs)
+						latency -= latency / r
+						latency += time.Now().Sub(startRead) / r
 						llock.Unlock()
 					}()
 				}
@@ -220,8 +235,10 @@ func main() {
 		start := time.Now()
 		for {
 			<-time.After(time.Second)
-			log.Println("Avg Throughput:", reqs/uint64(time.Now().Sub(start).Seconds()))
+			log.Println("Avg Throughput:", atomic.LoadUint64(&reqs)/uint64(time.Now().Sub(start).Seconds()))
+			llock.Lock()
 			log.Println("Avg Latency:", latency, float64(latency/(50*time.Millisecond))+1)
+			llock.Unlock()
 		}
 	}()
 
