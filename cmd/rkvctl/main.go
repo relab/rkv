@@ -19,7 +19,7 @@ import (
 )
 
 type controller struct {
-	leader int
+	leader int32
 	n      int
 	conns  []rkvpb.RKVClient
 }
@@ -50,7 +50,7 @@ func newController(servers []string) (*controller, error) {
 	}, nil
 }
 
-type request func(leader int) (interface{}, error)
+type request func(leader int32) (interface{}, error)
 
 func (c *controller) do(req request, maxRetry int, i ...int) (interface{}, error) {
 	if i == nil {
@@ -58,7 +58,7 @@ func (c *controller) do(req request, maxRetry int, i ...int) (interface{}, error
 	}
 
 	for {
-		res, err := req(c.leader)
+		res, err := req(atomic.LoadInt32(&c.leader))
 
 		if err != nil {
 			if i[0] < maxRetry {
@@ -66,14 +66,15 @@ func (c *controller) do(req request, maxRetry int, i ...int) (interface{}, error
 
 				switch {
 				case i[0] == 0 && strings.HasPrefix(serr, "not leader"):
-					leader, _ := strconv.Atoi(serr[len(serr)-4 : len(serr)-3])
+					l, _ := strconv.Atoi(serr[len(serr)-4 : len(serr)-3])
+					leader := int32(l)
 					if leader > 0 {
-						c.leader = leader - 1
+						atomic.StoreInt32(&c.leader, leader-1)
 						break
 					}
 					fallthrough
 				default:
-					c.leader = (c.leader + 1) % len(c.conns)
+					atomic.StoreInt32(&c.leader, (atomic.LoadInt32(&c.leader)+1)%int32(len(c.conns)))
 				}
 				<-time.After(2 * time.Second)
 				return c.do(req, maxRetry, i[0]+1)
@@ -138,7 +139,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		res, err := c.do(func(leader int) (interface{}, error) {
+		res, err := c.do(func(leader int32) (interface{}, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			return c.conns[leader].Register(ctx, &rkvpb.RegisterRequest{})
@@ -166,7 +167,7 @@ func main() {
 					go func() {
 						startRead := time.Now()
 
-						_, err := c.do(func(leader int) (interface{}, error) {
+						_, err := c.do(func(leader int32) (interface{}, error) {
 							ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 							defer cancel()
 							return c.conns[leader].Lookup(
@@ -194,7 +195,7 @@ func main() {
 					go func() {
 						startRead := time.Now()
 
-						_, err := c.do(func(leader int) (interface{}, error) {
+						_, err := c.do(func(leader int32) (interface{}, error) {
 							ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 							defer cancel()
 							return c.conns[leader].Insert(
