@@ -43,24 +43,6 @@ const None = 0
 // that directly depend on the number of requests being serviced.
 const BufferSize = 10000
 
-// Config contains the configuration needed to start an instance of Raft.
-type Config struct {
-	ID uint64
-
-	Nodes []string
-
-	Storage Storage
-
-	Batch            bool
-	QRPC             bool
-	SlowQuorum       bool
-	ElectionTimeout  time.Duration
-	HeartbeatTimeout time.Duration
-	MaxAppendEntries uint64
-
-	Logger logrus.FieldLogger
-}
-
 // UniqueCommand identifies a client command.
 type UniqueCommand struct {
 	ClientID       uint32
@@ -122,6 +104,8 @@ type Raft struct {
 	aereqout chan *pb.AppendEntriesRequest
 
 	logger logrus.FieldLogger
+
+	metricsEnabled bool
 }
 
 type entryFuture struct {
@@ -159,6 +143,7 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		rvreqout:         make(chan *pb.RequestVoteRequest, 128),
 		aereqout:         make(chan *pb.AppendEntriesRequest, 128),
 		logger:           cfg.Logger,
+		metricsEnabled:   cfg.MetricsEnabled,
 	}
 
 	snapshot, err := cfg.Storage.GetSnapshot()
@@ -324,7 +309,6 @@ func (r *Raft) HandleRequestVoteRequest(req *pb.RequestVoteRequest) *pb.RequestV
 		// AppendEntries RPC from current leader or granting a vote to
 		// candidate: convert to candidate. Here we are granting a vote
 		// to a candidate so we reset the election timeout.
-		r.heardFromLeader = true
 		r.resetElection = true
 		r.resetBaseline = true
 
@@ -340,6 +324,12 @@ func (r *Raft) HandleRequestVoteRequest(req *pb.RequestVoteRequest) *pb.RequestV
 func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.AppendEntriesResponse {
 	r.Lock()
 	defer r.Unlock()
+	if r.metricsEnabled {
+		start := time.Now()
+		defer func() {
+			rmetrics.aereq.Observe(time.Since(start).Seconds())
+		}()
+	}
 
 	reqLogger := r.logger.WithFields(logrus.Fields{
 		"currentterm":  r.currentTerm,

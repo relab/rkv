@@ -1,8 +1,18 @@
-hash: 1b47ed82cf8858aaf8997c7559be746f5548d1c155c959675316e9dbeefaa0f3
-updated: 2017-03-11T14:21:28.280861864+01:00
+hash: 779b0012154b41c5fb55b48c6e458aa16ccbe52e7844a2683b80feb19aa61e67
+updated: 2017-03-11T16:39:45.553099209+01:00
 imports:
+- name: github.com/beorn7/perks
+  version: 4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9
+  subpackages:
+  - quantile
 - name: github.com/boltdb/bolt
   version: e9cf4fae01b5a8ff89d0ec6b32f0d9c9f79aefdd
+- name: github.com/go-kit/kit
+  version: ab505808d90e4448307e0ba6b3855e61b43357dc
+  subpackages:
+  - metrics
+  - metrics/internal/lv
+  - metrics/prometheus
 - name: github.com/gogo/protobuf
   version: 100ba4e885062801d56799d78530b73b178a78f3
   subpackages:
@@ -19,10 +29,33 @@ imports:
   version: 0a025b7e63adc15a622f29b0b2c4c3848243bbf6
   subpackages:
   - simplelru
+- name: github.com/matttproud/golang_protobuf_extensions
+  version: c12348ce28de40eed0136aa2b644d0ee0650e56c
+  subpackages:
+  - pbutil
+- name: github.com/prometheus/client_golang
+  version: c5b7fccd204277076155f10851dad72b76a49317
+  subpackages:
+  - prometheus
+  - prometheus/promhttp
+- name: github.com/prometheus/client_model
+  version: 6f3806018612930941127f2a7c6c453ba2c527d2
+  subpackages:
+  - go
+- name: github.com/prometheus/common
+  version: 49fee292b27bfff7f354ee0f64e1bc4850462edf
+  subpackages:
+  - expfmt
+  - internal/bitbucket.org/ww/goautoneg
+  - model
+- name: github.com/prometheus/procfs
+  version: a1dba9ce8baed984a2495b658c82687f8157b98f
+  subpackages:
+  - xfs
 - name: github.com/relab/gorums
   version: 8ed594959a32dc96b3580859f3350a7599c45cc1
 - name: github.com/relab/raft
-  version: a01751b784d341f91bb82afd47623fa900793460
+  version: 073cc182e5d93889baa4698ca0af39f1f92abe64
   subpackages:
   - commonpb
   - raftgorums

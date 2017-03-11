@@ -8,6 +8,10 @@ import:
   - gogoproto
   - proto
 - package: github.com/hashicorp/go-immutable-radix
+- package: github.com/prometheus/client_golang
+  version: ~0.8.0
+  subpackages:
+  - prometheus/promhttp
 - package: github.com/relab/raft
   subpackages:
   - commonpb
