@@ -6,12 +6,14 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/relab/raft/raftgorums"
 	"github.com/relab/rkv/rkvpb"
@@ -97,6 +99,7 @@ func main() {
 		HeartbeatTimeout: *heartbeatTimeout,
 		MaxAppendEntries: *maxAppendEntries,
 		Logger:           logger,
+		MetricsEnabled:   true,
 	})
 
 	service := NewService(node.Raft)
@@ -104,6 +107,11 @@ func main() {
 
 	go func() {
 		logrus.Fatal(grpcServer.Serve(lis))
+	}()
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		logrus.Fatal(http.ListenAndServe(":5"+nodes[*id-1][1:], nil))
 	}()
 
 	logrus.Fatal(node.Run())
