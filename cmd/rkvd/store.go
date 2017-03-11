@@ -40,6 +40,7 @@ func NewStore() *Store {
 		snapTimer:   time.NewTimer(SnapTick),
 		snapshot:    unsafe.Pointer(&commonpb.Snapshot{}),
 		snapshotCh:  make(chan *commonpb.Snapshot),
+		newSnap:     1, // TODO Enable snapshots again
 	}
 }
 
