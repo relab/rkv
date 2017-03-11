@@ -1,0 +1,11 @@
+global:
+  scrape_interval:     15s
+
+  external_labels:
+    monitor: 'raft-monitor'
+
+scrape_configs:
+  - job_name: 'raft'
+    scrape_interval: 5s
+    static_configs:
+        - targets: ['localhost:59201', 'localhost:59202', 'localhost:59203']

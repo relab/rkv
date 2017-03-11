@@ -28,3 +28,7 @@ check:
 .PHONY: clean
 clean:
 	go clean -i ./cmd/...
+
+.PHONY: prometheus
+prometheus:
+	prometheus -config.file=prometheus.yml -web.listen-address ":59090"
