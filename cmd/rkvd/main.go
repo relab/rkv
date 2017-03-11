@@ -57,7 +57,7 @@ func main() {
 
 	logFile, err := os.OpenFile(
 		fmt.Sprintf("%s%sraft%.2d.log", os.TempDir(), string(filepath.Separator), *id),
-		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666,
+		os.O_CREATE|os.O_TRUNC|os.O_APPEND|os.O_WRONLY, 0666,
 	)
 
 	if err != nil {
