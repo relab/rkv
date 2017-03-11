@@ -9,6 +9,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/go-kit/kit/metrics"
 	"github.com/relab/raft"
 	"github.com/relab/raft/commonpb"
 	pb "github.com/relab/raft/raftgorums/raftpb"
@@ -243,6 +244,10 @@ func (r *Raft) Run() {
 func (r *Raft) HandleRequestVoteRequest(req *pb.RequestVoteRequest) *pb.RequestVoteResponse {
 	r.Lock()
 	defer r.Unlock()
+	if r.metricsEnabled {
+		timer := metrics.NewTimer(rmetrics.rvreq)
+		defer timer.ObserveDuration()
+	}
 
 	var voteGranted bool
 	defer func() {
@@ -325,10 +330,8 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	r.Lock()
 	defer r.Unlock()
 	if r.metricsEnabled {
-		start := time.Now()
-		defer func() {
-			rmetrics.aereq.Observe(time.Since(start).Seconds())
-		}()
+		timer := metrics.NewTimer(rmetrics.aereq)
+		defer timer.ObserveDuration()
 	}
 
 	reqLogger := r.logger.WithFields(logrus.Fields{
@@ -540,6 +543,9 @@ func (r *Raft) runStateMachine() {
 
 		if commit.future != nil {
 			commit.future.Respond(res)
+			if r.metricsEnabled {
+				rmetrics.cmdCommit.Observe(time.Since(commit.future.Created).Seconds())
+			}
 		}
 	}
 
@@ -663,6 +669,10 @@ func (r *Raft) startElection() {
 func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 	r.Lock()
 	defer r.Unlock()
+	if r.metricsEnabled {
+		timer := metrics.NewTimer(rmetrics.rvres)
+		defer timer.ObserveDuration()
+	}
 
 	term := r.currentTerm
 
@@ -825,6 +835,10 @@ func (r *Raft) HandleAppendEntriesResponse(response *pb.AppendEntriesResponse, r
 		r.Unlock()
 		r.advanceCommitIndex()
 	}()
+	if r.metricsEnabled {
+		timer := metrics.NewTimer(rmetrics.aeres)
+		defer timer.ObserveDuration()
+	}
 
 	// #A2 If RPC request or response contains term T > currentTerm: set currentTerm = T, convert to follower.
 	// If we didn't get a response from a majority (excluding self) step down.
