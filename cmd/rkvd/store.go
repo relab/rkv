@@ -28,6 +28,7 @@ type Store struct {
 	snapTimer  *time.Timer
 	snapshot   unsafe.Pointer // *commonpb.Snapshot
 	snapshotCh chan *commonpb.Snapshot
+	newSnap    int32
 }
 
 // NewStore initializes and returns a *Store.
@@ -74,12 +75,15 @@ func (s *Store) Apply(entry *commonpb.Entry) interface{} {
 func (s *Store) maybeSnapshot(entry *commonpb.Entry) {
 	select {
 	case <-s.snapTimer.C:
-		go s.takeSnapshot(
-			atomic.LoadPointer(&s.snapshot),
-			entry.Term, entry.Index,
-			s.kvs.Root().Iterator(),
-			s.sessions.Root().Iterator(),
-		)
+		s.snapTimer = time.NewTimer(SnapTick)
+		if atomic.CompareAndSwapInt32(&s.newSnap, 0, 1) {
+			go s.takeSnapshot(
+				atomic.LoadPointer(&s.snapshot),
+				entry.Term, entry.Index,
+				s.kvs.Root().Iterator(),
+				s.sessions.Root().Iterator(),
+			)
+		}
 	default:
 	}
 }
@@ -234,7 +238,7 @@ func (s *Store) takeSnapshot(old unsafe.Pointer, term, index uint64, iterKvs, it
 		s.snapshotCh <- snapshot
 	}
 
-	s.snapTimer = time.NewTimer(SnapTick)
+	atomic.StoreInt32(&s.newSnap, 0)
 }
 
 // Restore implements raft.StateMachine.
