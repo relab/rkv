@@ -54,7 +54,6 @@ func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats) (*cl
 			if i+1 == len(servers) {
 				return nil, err
 			}
-			c.nextLeader()
 			continue
 		}
 		break
@@ -76,6 +75,7 @@ func (c *client) register() (*rkvpb.RegisterResponse, error) {
 	res, err := c.leader().Register(ctx, &rkvpb.RegisterRequest{})
 
 	if err != nil {
+		c.nextLeader()
 		c.s.writes.Add(1)
 		timer.ObserveDuration()
 	}
@@ -95,6 +95,7 @@ func (c *client) lookup() (*rkvpb.LookupResponse, error) {
 	})
 
 	if err != nil {
+		c.nextLeader()
 		c.s.reads.Add(1)
 		timer.ObserveDuration()
 	}
@@ -117,6 +118,7 @@ func (c *client) insert() (*rkvpb.InsertResponse, error) {
 	})
 
 	if err != nil {
+		c.nextLeader()
 		c.s.writes.Add(1)
 		timer.ObserveDuration()
 	}
