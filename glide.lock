@@ -1,5 +1,5 @@
 hash: 779b0012154b41c5fb55b48c6e458aa16ccbe52e7844a2683b80feb19aa61e67
-updated: 2017-03-12T15:41:04.166661398+01:00
+updated: 2017-03-12T16:40:24.12905411+01:00
 imports:
 - name: github.com/beorn7/perks
   version: 4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9
@@ -55,7 +55,7 @@ imports:
 - name: github.com/relab/gorums
   version: 8ed594959a32dc96b3580859f3350a7599c45cc1
 - name: github.com/relab/raft
-  version: b123c97ccbbf187d1afa4015e4439d06583dfab1
+  version: bf001db7b7c6dcc1d6df932c6901092aabb18653
   subpackages:
   - commonpb
   - raftgorums
