@@ -60,6 +60,7 @@ func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats) (*cl
 const (
 	retryPerServer = 10
 	sleepPerRound  = 250 * time.Millisecond
+	requestTimeout = 10 * time.Minute
 )
 
 func sleep(round int) {
@@ -71,7 +72,7 @@ func (c *client) register() (*rkvpb.RegisterResponse, error) {
 	c.s.writeReqs.Add(1)
 	timer := metrics.NewTimer(c.s.writeLatency)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()
 
 	var res *rkvpb.RegisterResponse
@@ -101,7 +102,7 @@ func (c *client) lookup() (*rkvpb.LookupResponse, error) {
 	c.s.readReqs.Add(1)
 	timer := metrics.NewTimer(c.s.readLatency)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()
 
 	var res *rkvpb.LookupResponse
@@ -134,7 +135,7 @@ func (c *client) insert() (*rkvpb.InsertResponse, error) {
 	c.s.writeReqs.Add(1)
 	timer := metrics.NewTimer(c.s.writeLatency)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()
 
 	var res *rkvpb.InsertResponse
