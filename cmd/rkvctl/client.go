@@ -76,6 +76,7 @@ func (c *client) register() (*rkvpb.RegisterResponse, error) {
 
 	if err != nil {
 		c.nextLeader()
+	} else {
 		c.s.writes.Add(1)
 		timer.ObserveDuration()
 	}
@@ -96,6 +97,7 @@ func (c *client) lookup() (*rkvpb.LookupResponse, error) {
 
 	if err != nil {
 		c.nextLeader()
+	} else {
 		c.s.reads.Add(1)
 		timer.ObserveDuration()
 	}
@@ -119,6 +121,7 @@ func (c *client) insert() (*rkvpb.InsertResponse, error) {
 
 	if err != nil {
 		c.nextLeader()
+	} else {
 		c.s.writes.Add(1)
 		timer.ObserveDuration()
 	}
