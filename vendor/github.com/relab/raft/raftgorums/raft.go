@@ -209,8 +209,12 @@ func (r *Raft) Run() {
 	}
 
 	baselineTimeout := time.After(r.electionTimeout)
-	electionTimeout := randomTimeout(r.electionTimeout)
+	rndTimeout := randomTimeout(r.electionTimeout)
+	electionTimeout := time.After(rndTimeout)
 	heartbeatTimeout := time.After(r.heartbeatTimeout)
+
+	r.logger.WithField("electiontimeout", rndTimeout).
+		Infoln("Set election timeout")
 
 	for {
 		select {
@@ -218,14 +222,18 @@ func (r *Raft) Run() {
 			baselineTimeout = time.After(r.electionTimeout)
 			baseline()
 		case <-electionTimeout:
-			electionTimeout = randomTimeout(r.electionTimeout)
-			r.logger.WithField("electiontimeout", electionTimeout).
+			rndTimeout := randomTimeout(r.electionTimeout)
+			electionTimeout = time.After(rndTimeout)
+
+			r.logger.WithField("electiontimeout", rndTimeout).
 				Infoln("Set election timeout")
 
 			startElection()
 		case <-r.startElectionNow:
-			electionTimeout = randomTimeout(r.electionTimeout)
-			r.logger.WithField("electiontimeout", electionTimeout).
+			rndTimeout := randomTimeout(r.electionTimeout)
+			electionTimeout = time.After(rndTimeout)
+
+			r.logger.WithField("electiontimeout", rndTimeout).
 				Infoln("Set election timeout")
 
 			startElection()
@@ -373,11 +381,17 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 		r.becomeFollower(r.currentTerm)
 	}
 
-	if success {
-		r.leader = req.LeaderID
-		r.heardFromLeader = true
-		r.seenLeader = true
+	if r.metricsEnabled {
+		rmetrics.leader.Set(float64(req.LeaderID))
+	}
 
+	// We acknowledge this server as the leader even if the append entries
+	// request might be unsuccessful.
+	r.leader = req.LeaderID
+	r.heardFromLeader = true
+	r.seenLeader = true
+
+	if success {
 		var toSave []*commonpb.Entry
 		index := req.PrevLogIndex
 
@@ -402,6 +416,10 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 
 		old := r.commitIndex
 		r.commitIndex = min(req.CommitIndex, r.storage.NextIndex())
+
+		if r.metricsEnabled {
+			rmetrics.commitIndex.Set(float64(r.commitIndex))
+		}
 
 		r.logger.WithFields(logrus.Fields{
 			"oldcommitindex": old,
@@ -435,6 +453,9 @@ func (r *Raft) ProposeCmd(ctx context.Context, cmd []byte) (raft.Future, error) 
 
 	select {
 	case r.queue <- future:
+		if r.metricsEnabled {
+			rmetrics.writeReqs.Add(1)
+		}
 		return future, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -447,6 +468,10 @@ func (r *Raft) ReadCmd(ctx context.Context, cmd []byte) (raft.Future, error) {
 
 	if err != nil {
 		return nil, err
+	}
+
+	if r.metricsEnabled {
+		rmetrics.readReqs.Add(1)
 	}
 
 	r.Lock()
@@ -491,6 +516,10 @@ func (r *Raft) advanceCommitIndex() {
 	}
 
 	if r.commitIndex > old {
+		if r.metricsEnabled {
+			rmetrics.commitIndex.Set(float64(r.commitIndex))
+		}
+
 		r.logger.WithFields(logrus.Fields{
 			"oldcommitindex": old,
 			"commitindex":    r.commitIndex,
@@ -501,6 +530,7 @@ func (r *Raft) advanceCommitIndex() {
 
 	for _, future := range r.pendingReads {
 		r.applyCh <- &entryFuture{future.Entry, future}
+		rmetrics.reads.Add(1)
 	}
 
 	r.pendingReads = nil
@@ -519,6 +549,10 @@ func (r *Raft) newCommit(old uint64) {
 
 		switch r.state {
 		case Leader:
+			if r.metricsEnabled {
+				rmetrics.writes.Add(1)
+			}
+
 			e := r.pending.Front()
 			if e != nil {
 				future := e.Value.(*raft.EntryFuture)
@@ -610,10 +644,15 @@ func (r *Raft) restoreFromSnapshot() {
 	old := r.commitIndex
 
 	r.sm.Restore(snapshot)
+	// TODO Make sure to not go back on commit index, use max().
 	r.commitIndex = snapshot.LastIncludedIndex
 	r.appliedIndex = snapshot.LastIncludedIndex
 	r.nextIndex = r.currentSnapshot.LastIncludedIndex + 1
 	r.becomeFollower(snapshot.LastIncludedTerm)
+
+	if r.metricsEnabled {
+		rmetrics.commitIndex.Set(float64(r.commitIndex))
+	}
 
 	r.logger.WithFields(logrus.Fields{
 		"oldcommitindex": old,
@@ -705,6 +744,11 @@ func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 
 		// We have received at least a quorum of votes.
 		// We are the leader for this term. See Raft Paper Figure 2 -> Rules for Servers -> Leaders.
+
+		if r.metricsEnabled {
+			rmetrics.leader.Set(float64(r.id))
+		}
+
 		r.logger.WithFields(logrus.Fields{
 			"currentterm": r.currentTerm,
 		}).Infoln("Elected leader")
@@ -891,20 +935,6 @@ func (r *Raft) becomeFollower(term uint64) {
 	// Reset election and baseline timeouts.
 	r.resetBaseline = true
 	r.resetElection = true
-}
-
-func (r *Raft) getHint() uint32 {
-	r.Lock()
-	defer r.Unlock()
-
-	var hint uint32
-
-	if r.seenLeader {
-		hint = uint32(r.leader)
-	}
-
-	// If client receives hint = 0, it should try another random server.
-	return hint
 }
 
 func (r *Raft) logTerm(index uint64) uint64 {
