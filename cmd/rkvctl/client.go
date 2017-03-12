@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/go-kit/kit/metrics"
 	"github.com/relab/rkv/rkvpb"
 	"google.golang.org/grpc"
@@ -46,23 +45,26 @@ func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats) (*cl
 		s:       s,
 	}
 
-	var res *rkvpb.RegisterResponse
-	for i := 0; i < len(servers); i++ {
-		var err error
-		res, err = c.register()
-		if err != nil {
-			if i+1 == len(servers) {
-				return nil, err
-			}
-			continue
-		}
-		break
+	res, err := c.register()
+
+	if err != nil {
+		return nil, err
 	}
 
 	c.id = res.ClientID
 	c.seq = 1
 
 	return c, nil
+}
+
+const (
+	retryPerServer = 10
+	sleepPerRound  = 250 * time.Millisecond
+)
+
+func sleep(round int) {
+	dur := sleepPerRound * time.Duration(round)
+	time.Sleep(dur)
 }
 
 func (c *client) register() (*rkvpb.RegisterResponse, error) {
@@ -72,13 +74,24 @@ func (c *client) register() (*rkvpb.RegisterResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	res, err := c.leader().Register(ctx, &rkvpb.RegisterRequest{})
+	var res *rkvpb.RegisterResponse
+	var err error
 
-	if err != nil {
-		c.nextLeader()
-	} else {
+	for i := 0; i < retryPerServer*len(c.servers); i++ {
+		if i%len(c.servers) == 0 {
+			sleep(i / len(c.servers))
+		}
+
+		res, err = c.leader().Register(ctx, &rkvpb.RegisterRequest{})
+
+		if err != nil {
+			c.nextLeader()
+			continue
+		}
+
 		c.s.writes.Add(1)
 		timer.ObserveDuration()
+		break
 	}
 
 	return res, err
@@ -91,15 +104,27 @@ func (c *client) lookup() (*rkvpb.LookupResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	res, err := c.leader().Lookup(ctx, &rkvpb.LookupRequest{
-		Key: strconv.FormatUint(c.zipf.Uint64(), 10),
-	})
+	var res *rkvpb.LookupResponse
+	var err error
 
-	if err != nil {
-		c.nextLeader()
-	} else {
+	for i := 0; i < retryPerServer*len(c.servers); i++ {
+		if i%len(c.servers) == 0 {
+			sleep(i / len(c.servers))
+		}
+
+		res, err = c.leader().Lookup(ctx, &rkvpb.LookupRequest{
+			Key: strconv.FormatUint(c.zipf.Uint64(), 10),
+		})
+
+		if err != nil {
+			c.nextLeader()
+			continue
+		}
+
 		c.s.reads.Add(1)
 		timer.ObserveDuration()
+		break
+
 	}
 
 	return res, err
@@ -112,18 +137,29 @@ func (c *client) insert() (*rkvpb.InsertResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	res, err := c.leader().Insert(ctx, &rkvpb.InsertRequest{
-		ClientID:  c.id,
-		ClientSeq: atomic.AddUint64(&c.seq, 1),
-		Key:       strconv.FormatUint(c.zipf.Uint64(), 10),
-		Value:     strconv.FormatUint(c.zipf.Uint64(), 10),
-	})
+	var res *rkvpb.InsertResponse
+	var err error
 
-	if err != nil {
-		c.nextLeader()
-	} else {
+	for i := 0; i < retryPerServer*len(c.servers); i++ {
+		if i%len(c.servers) == 0 {
+			sleep(i / len(c.servers))
+		}
+
+		res, err = c.leader().Insert(ctx, &rkvpb.InsertRequest{
+			ClientID:  c.id,
+			ClientSeq: atomic.AddUint64(&c.seq, 1),
+			Key:       strconv.FormatUint(c.zipf.Uint64(), 10),
+			Value:     strconv.FormatUint(c.zipf.Uint64(), 10),
+		})
+
+		if err != nil {
+			c.nextLeader()
+			continue
+		}
+
 		c.s.writes.Add(1)
 		timer.ObserveDuration()
+		break
 	}
 
 	return res, err
@@ -135,11 +171,7 @@ func (c *client) leader() rkvpb.RKVClient {
 
 func (c *client) nextLeader() {
 	newLeader := (c.currentLeader + 1) % uint64(len(c.servers))
-	ok := atomic.CompareAndSwapUint64(c.l, c.currentLeader, newLeader)
-	if !ok {
-		return
-	}
-	logrus.WithField("leader", newLeader+1).Infoln("Changed leader")
+	atomic.CompareAndSwapUint64(c.l, c.currentLeader, newLeader)
 }
 
 func (c *client) getLeader() uint64 {
