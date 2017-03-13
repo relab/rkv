@@ -387,6 +387,16 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 		}
 	}
 
+	// If we already know that the entries we are receiving are committed in
+	// our log, we can return early.
+	if req.CommitIndex < r.commitIndex {
+		return &pb.AppendEntriesResponse{
+			Term:       req.Term,
+			MatchIndex: r.commitIndex,
+			Success:    success,
+		}
+	}
+
 	var toSave []*commonpb.Entry
 	index := req.PrevLogIndex
 
@@ -415,11 +425,6 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	}
 	logLen = r.storage.NextIndex() - 1
 
-	reqLogger.WithFields(logrus.Fields{
-		"lensaved": len(toSave),
-		"lenlog":   r.storage.NextIndex(),
-	}).Infoln("Saved entries to stable storage")
-
 	old := r.commitIndex
 	// Commit index can not exceed the length of our log.
 	r.commitIndex = min(req.CommitIndex, logLen)
@@ -428,14 +433,21 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 		rmetrics.commitIndex.Set(float64(r.commitIndex))
 	}
 
-	r.logger.WithFields(logrus.Fields{
-		"oldcommitindex": old,
-		"commitindex":    r.commitIndex,
-	}).Infoln("Set commit index")
-
 	if r.commitIndex > old {
+		r.logger.WithFields(logrus.Fields{
+			"oldcommitindex": old,
+			"commitindex":    r.commitIndex,
+		}).Infoln("Set commit index")
+
 		r.newCommit(old)
 	}
+
+	reqLogger.WithFields(logrus.Fields{
+		"lensaved":   len(toSave),
+		"lenlog":     r.storage.NextIndex(),
+		"matchindex": index,
+		"success":    success,
+	}).Infoln("Saved entries to stable storage")
 
 	return &pb.AppendEntriesResponse{
 		Term:       req.Term,
@@ -750,12 +762,6 @@ LOOP:
 
 	// #L1
 	entries := r.getNextEntries(r.nextIndex)
-
-	r.logger.WithFields(logrus.Fields{
-		"currentterm": r.currentTerm,
-		"lenentries":  len(entries),
-	}).Infoln("Sending AppendEntries")
-
 	r.aereqout <- r.getAppendEntriesRequest(r.nextIndex, entries)
 }
 
@@ -784,6 +790,14 @@ func (r *Raft) getNextEntries(nextIndex uint64) []*commonpb.Entry {
 func (r *Raft) getAppendEntriesRequest(nextIndex uint64, entries []*commonpb.Entry) *pb.AppendEntriesRequest {
 	prevIndex := nextIndex - 1
 	prevTerm := r.logTerm(prevIndex)
+
+	r.logger.WithFields(logrus.Fields{
+		"prevlogindex": prevIndex,
+		"prevlogterm":  prevTerm,
+		"commitindex":  r.commitIndex,
+		"currentterm":  r.currentTerm,
+		"lenentries":   len(entries),
+	}).Infoln("Sending AppendEntries")
 
 	return &pb.AppendEntriesRequest{
 		LeaderID:     r.id,
