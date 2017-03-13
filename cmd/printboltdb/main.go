@@ -26,18 +26,27 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Found: %d entries.\n", storage.NextIndex()-storage.FirstIndex())
+	nextIndex, err := storage.NextIndex()
+	if err != nil {
+		log.Fatal(err)
+	}
+	firstIndex, err := storage.FirstIndex()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	entries := make([]*commonpb.Entry, storage.NextIndex()-storage.FirstIndex())
+	fmt.Printf("Found: %d entries.\n", nextIndex-firstIndex+1)
 
-	for i := storage.FirstIndex(); i < storage.NextIndex(); i++ {
+	entries := make([]*commonpb.Entry, nextIndex-firstIndex+1)
+
+	for i := firstIndex; i < nextIndex; i++ {
 		entry, err := storage.GetEntry(i)
 
 		if err != nil {
 			entry = &commonpb.Entry{Data: []byte("missing")}
 		}
 
-		entries[i-storage.FirstIndex()] = entry
+		entries[i-firstIndex] = entry
 	}
 
 	for _, entry := range entries {
