@@ -2,9 +2,7 @@ package raftgorums
 
 import (
 	"errors"
-	"math"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/relab/raft/commonpb"
 )
 
@@ -22,22 +20,26 @@ type Storage interface {
 	Set(key uint64, value uint64) error
 	Get(key uint64) (uint64, error)
 
+	// Entries must be stored such that Entry.Index can be used to retrieve
+	// that entry in the future.
 	StoreEntries([]*commonpb.Entry) error
+	// Retrieves entry with Entry.Index == index.
 	GetEntry(index uint64) (*commonpb.Entry, error)
-	// Inclusive first, exclusive last.
+	// Get the inclusive range of entries from first to last.
 	GetEntries(first, last uint64) ([]*commonpb.Entry, error)
-	// Inclusive.
+	// Remove the inclusive range of entries from first to last.
 	RemoveEntries(first, last uint64) error
 
-	// FirstIndex and NextIndex should be saved to memory when creating a
-	// new storage. When they are modified on disk, the should be updated in
-	// memory.
-	FirstIndex() uint64
-	NextIndex() uint64
+	// Should return 1 if not set.
+	FirstIndex() (uint64, error)
+	// Should return 1 if not set.
+	NextIndex() (uint64, error)
 
 	SetSnapshot(*commonpb.Snapshot) error
 	GetSnapshot() (*commonpb.Snapshot, error)
 }
+
+// TODO Create LogStore wrapper.
 
 // Memory implements the Storage interface as an in-memory storage.
 type Memory struct {
@@ -47,21 +49,6 @@ type Memory struct {
 
 // NewMemory returns a memory backed storage.
 func NewMemory(kvstore map[uint64]uint64, log map[uint64]*commonpb.Entry) *Memory {
-	var first uint64
-
-	if len(log) > 0 {
-		first = math.MaxUint64
-	}
-
-	for i := range log {
-		if i < first {
-			first = i
-		}
-	}
-
-	kvstore[KeyFirstIndex] = first
-	kvstore[KeyNextIndex] = first + uint64(len(log))
-
 	return &Memory{
 		kvstore: kvstore,
 		log:     log,
@@ -81,24 +68,28 @@ func (m *Memory) Get(key uint64) (uint64, error) {
 
 // StoreEntries implements the Storage interface.
 func (m *Memory) StoreEntries(entries []*commonpb.Entry) error {
-	i := m.NextIndex() + 1
+	i, _ := m.NextIndex()
 	for _, entry := range entries {
 		m.log[i] = entry
 		i++
 	}
-
-	err := m.Set(KeyNextIndex, i)
-	return err
+	return m.Set(KeyNextIndex, i)
 }
 
 // GetEntry implements the Storage interface.
 func (m *Memory) GetEntry(index uint64) (*commonpb.Entry, error) {
-	return m.log[index], nil
+	entry, ok := m.log[index]
+
+	if !ok {
+		return nil, ErrKeyNotFound
+	}
+
+	return entry, nil
 }
 
 // GetEntries implements the Storage interface.
 func (m *Memory) GetEntries(first, last uint64) ([]*commonpb.Entry, error) {
-	entries := make([]*commonpb.Entry, last-first)
+	entries := make([]*commonpb.Entry, last-first+1)
 
 	i := first
 	for j := range entries {
@@ -115,20 +106,19 @@ func (m *Memory) RemoveEntries(first, last uint64) error {
 		delete(m.log, i)
 	}
 
-	err := m.Set(KeyFirstIndex, m.log[last+1].Index)
-	return err
+	return m.Set(KeyNextIndex, first)
 }
 
 // FirstIndex implements the Storage interface.
-func (m *Memory) FirstIndex() uint64 {
+func (m *Memory) FirstIndex() (uint64, error) {
 	first, _ := m.Get(KeyFirstIndex)
-	return first
+	return first, nil
 }
 
 // NextIndex implements the Storage interface.
-func (m *Memory) NextIndex() uint64 {
+func (m *Memory) NextIndex() (uint64, error) {
 	next, _ := m.Get(KeyNextIndex)
-	return next
+	return next, nil
 }
 
 // SetSnapshot implements the Storage interface.
@@ -139,108 +129,4 @@ func (m *Memory) SetSnapshot(*commonpb.Snapshot) error {
 // GetSnapshot implements the Storage interface.
 func (m *Memory) GetSnapshot() (*commonpb.Snapshot, error) {
 	return nil, errors.New("not implemented")
-}
-
-type panicStorage struct {
-	s      Storage
-	logger logrus.FieldLogger
-}
-
-func (ps *panicStorage) Set(key uint64, value uint64) {
-	err := ps.s.Set(key, value)
-
-	if err != nil {
-		ps.logger.WithError(err).WithFields(logrus.Fields{
-			"key":   key,
-			"value": value,
-		}).Panicln("Could not set key-value")
-	}
-}
-
-func (ps *panicStorage) Get(key uint64) uint64 {
-	value, err := ps.s.Get(key)
-
-	if err != nil {
-		ps.logger.WithError(err).WithFields(logrus.Fields{
-			"key": key,
-		}).Panicln("Could not get value")
-	}
-
-	return value
-}
-
-func (ps *panicStorage) StoreEntries(entries []*commonpb.Entry) {
-	err := ps.s.StoreEntries(entries)
-
-	if err != nil {
-		ps.logger.WithError(err).WithFields(logrus.Fields{
-			"lenentries": len(entries),
-		}).Panicln("Could not store entries")
-	}
-}
-
-func (ps *panicStorage) GetEntry(index uint64) *commonpb.Entry {
-	entry, err := ps.s.GetEntry(index)
-
-	if err != nil {
-		ps.logger.WithError(err).WithFields(logrus.Fields{
-			"index": index,
-		}).Panicln("Could not get entry")
-	}
-
-	return entry
-}
-
-func (ps *panicStorage) GetEntries(first, last uint64) []*commonpb.Entry {
-	entries, err := ps.s.GetEntries(first, last)
-
-	if err != nil {
-		ps.logger.WithError(err).WithFields(logrus.Fields{
-			"first": first,
-			"last":  last,
-		}).Panicln("Could not get entries")
-	}
-
-	return entries
-}
-
-func (ps *panicStorage) RemoveEntries(first, last uint64) {
-	err := ps.s.RemoveEntries(first, last)
-
-	if err != nil {
-		ps.logger.WithError(err).WithFields(logrus.Fields{
-			"first": first,
-			"last":  last,
-		}).Panicln("Could not remove entries")
-	}
-}
-
-func (ps *panicStorage) FirstIndex() uint64 {
-	return ps.s.FirstIndex()
-}
-
-func (ps *panicStorage) NextIndex() uint64 {
-	return ps.s.NextIndex()
-}
-
-func (ps *panicStorage) SetSnapshot(snapshot *commonpb.Snapshot) {
-	err := ps.s.SetSnapshot(snapshot)
-
-	if err != nil {
-		ps.logger.WithError(err).WithFields(logrus.Fields{
-			"snapshotterm":      snapshot.Term,
-			"lastincludedindex": snapshot.LastIncludedIndex,
-			"lastincludedterm":  snapshot.LastIncludedTerm,
-		}).Panicln("Could not set snapshot")
-	}
-}
-
-func (ps *panicStorage) GetSnapshot() *commonpb.Snapshot {
-	snapshot, err := ps.s.GetSnapshot()
-
-	if err != nil {
-		ps.logger.WithError(err).Panicln("Could not get snapshot")
-	}
-
-	return snapshot
 }

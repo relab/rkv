@@ -96,7 +96,7 @@ func TestFileStorageStoreEntry(t *testing.T) {
 	storage, _, cleanup := newFileStorage(t, true)
 	defer cleanup()
 
-	expected := &commonpb.Entry{Term: 5}
+	expected := &commonpb.Entry{Term: 5, Index: 1}
 
 	err := storage.StoreEntries([]*commonpb.Entry{expected})
 
@@ -104,7 +104,7 @@ func TestFileStorageStoreEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := storage.GetEntry(0)
+	got, err := storage.GetEntry(1)
 
 	if err != nil {
 		t.Fatal(err)

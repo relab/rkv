@@ -3,7 +3,6 @@ package raftgorums
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"os"
 
 	"github.com/boltdb/bolt"
@@ -23,9 +22,6 @@ var ErrKeyNotFound = errors.New("key not found")
 // storage.
 type FileStorage struct {
 	*bolt.DB
-
-	firstIndex uint64
-	nextIndex  uint64
 }
 
 // NewFileStorage returns a new FileStorage using the file given with the path
@@ -77,14 +73,26 @@ func NewFileStorage(path string, overwrite bool) (*FileStorage, error) {
 	firstIndex := get(tx.Bucket(stateBucket), KeyFirstIndex)
 	nextIndex := get(tx.Bucket(stateBucket), KeyNextIndex)
 
+	if firstIndex == 0 {
+		err := set(tx.Bucket(stateBucket), KeyFirstIndex, 1)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if nextIndex == 0 {
+		err := set(tx.Bucket(stateBucket), KeyNextIndex, 1)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
 	return &FileStorage{
-		DB:         db,
-		firstIndex: firstIndex,
-		nextIndex:  nextIndex,
+		DB: db,
 	}, nil
 }
 
@@ -131,12 +139,14 @@ func get(bucket *bolt.Bucket, key uint64) uint64 {
 	k := make([]byte, 8)
 	binary.BigEndian.PutUint64(k, key)
 
-	if val := bucket.Get(k); val != nil {
-		return binary.BigEndian.Uint64(val)
+	val := bucket.Get(k)
+
+	if val == nil {
+		// Default to 0. This lets us get values not yet set.
+		return 0
 	}
 
-	// Default to 0. This lets us get values not yet set.
-	return 0
+	return binary.BigEndian.Uint64(val)
 }
 
 // StoreEntries implements the Storage interface.
@@ -153,7 +163,7 @@ func (fs *FileStorage) StoreEntries(entries []*commonpb.Entry) error {
 	bucket := tx.Bucket(logBucket)
 
 	for _, entry := range entries {
-		binary.BigEndian.PutUint64(k, fs.nextIndex)
+		binary.BigEndian.PutUint64(k, entry.Index)
 
 		val, err := entry.Marshal()
 
@@ -164,11 +174,10 @@ func (fs *FileStorage) StoreEntries(entries []*commonpb.Entry) error {
 		if err := bucket.Put(k, val); err != nil {
 			return err
 		}
-
-		fs.nextIndex++
 	}
 
-	if err := set(tx.Bucket(stateBucket), KeyNextIndex, fs.nextIndex); err != nil {
+	nextIndex := entries[len(entries)-1].Index + 1
+	if err := set(tx.Bucket(stateBucket), KeyNextIndex, nextIndex); err != nil {
 		return err
 	}
 
@@ -205,6 +214,7 @@ func (fs *FileStorage) GetEntry(index uint64) (*commonpb.Entry, error) {
 }
 
 // GetEntries implements the Storage interface.
+// TODO We can reduce allocation by passing the slice to fill.
 func (fs *FileStorage) GetEntries(first, last uint64) ([]*commonpb.Entry, error) {
 	tx, err := fs.Begin(false)
 
@@ -216,25 +226,29 @@ func (fs *FileStorage) GetEntries(first, last uint64) ([]*commonpb.Entry, error)
 
 	bucket := tx.Bucket(logBucket)
 
-	entries := make([]*commonpb.Entry, last-first)
+	entries := make([]*commonpb.Entry, last-first+1)
 	k := make([]byte, 8)
 
-	for i := first; i < last; i++ {
+	i := first
+	for j := range entries {
 		binary.BigEndian.PutUint64(k, i)
 
-		if val := bucket.Get(k); val != nil {
-			var entry commonpb.Entry
-			err := entry.Unmarshal(val)
+		val := bucket.Get(k)
 
-			if err != nil {
-				return nil, err
-			}
-
-			entries[i-first] = &entry
-			continue
+		if val == nil {
+			return nil, ErrKeyNotFound
 		}
 
-		panic(fmt.Sprintf("filestorage: gap in range [%d, %d)", first, last))
+		var entry commonpb.Entry
+		err := entry.Unmarshal(val)
+
+		if err != nil {
+			return nil, err
+		}
+
+		entries[j] = &entry
+		i++
+
 	}
 
 	return entries, nil
@@ -263,9 +277,7 @@ func (fs *FileStorage) RemoveEntries(first, last uint64) error {
 		c.Next()
 	}
 
-	fs.nextIndex = first
-
-	if err := set(tx.Bucket(stateBucket), KeyNextIndex, fs.nextIndex); err != nil {
+	if err := set(tx.Bucket(stateBucket), KeyNextIndex, first); err != nil {
 		return err
 	}
 
@@ -273,13 +285,13 @@ func (fs *FileStorage) RemoveEntries(first, last uint64) error {
 }
 
 // FirstIndex implements the Storage interface.
-func (fs *FileStorage) FirstIndex() uint64 {
-	return fs.firstIndex
+func (fs *FileStorage) FirstIndex() (uint64, error) {
+	return fs.Get(KeyFirstIndex)
 }
 
 // NextIndex implements the Storage interface.
-func (fs *FileStorage) NextIndex() uint64 {
-	return fs.nextIndex
+func (fs *FileStorage) NextIndex() (uint64, error) {
+	return fs.Get(KeyNextIndex)
 }
 
 // SetSnapshot implements the Storage interface.
@@ -305,16 +317,12 @@ func (fs *FileStorage) SetSnapshot(snapshot *commonpb.Snapshot) error {
 		return err
 	}
 
-	fs.firstIndex = snapshot.LastIncludedIndex
-	// Since nextIndex starts at 0 and Raft indexes starts at 1, don't +1
-	// this.
-	fs.nextIndex = snapshot.LastIncludedIndex
-
-	if err := set(tx.Bucket(stateBucket), KeyNextIndex, fs.nextIndex); err != nil {
+	firstIndex := snapshot.LastIncludedIndex
+	if err := set(tx.Bucket(stateBucket), KeyFirstIndex, firstIndex); err != nil {
 		return err
 	}
-
-	if err := set(tx.Bucket(stateBucket), KeyFirstIndex, fs.firstIndex); err != nil {
+	nextIndex := firstIndex + 1
+	if err := set(tx.Bucket(stateBucket), KeyNextIndex, nextIndex); err != nil {
 		return err
 	}
 
