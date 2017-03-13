@@ -2,11 +2,15 @@ package main
 
 import (
 	"os"
+	"time"
 
 	"github.com/Sirupsen/logrus"
 )
 
-var defaultFormater = &logrus.TextFormatter{DisableColors: true}
+var defaultFormater = &logrus.TextFormatter{
+	DisableColors:   true,
+	TimestampFormat: time.RFC3339Nano,
+}
 
 // LogToFileHook saves log entries to a file after applying the Formatter.
 type LogToFileHook struct {
