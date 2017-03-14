@@ -17,7 +17,7 @@ import:
   - commonpb
   - raftgorums
 - package: github.com/relab/gorums
-  version: per_node_arg
+  version: for_raft
 - package: golang.org/x/net
   subpackages:
   - context
