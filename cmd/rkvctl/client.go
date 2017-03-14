@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"math/rand"
 	"strconv"
 	"sync/atomic"
@@ -16,6 +17,8 @@ type client struct {
 	l             *uint64
 	currentLeader uint64
 	servers       []rkvpb.RKVClient
+
+	inFlight int64
 
 	id  uint64
 	seq uint64
@@ -61,7 +64,11 @@ const (
 	retryPerServer = 10
 	sleepPerRound  = 250 * time.Millisecond
 	requestTimeout = 10 * time.Minute
+	maxInFlight    = 15000
 )
+
+// ErrMaxInFlightReached indicates that there are too many messages in-flight.
+var ErrMaxInFlightReached = errors.New("reached max in-flight")
 
 func sleep(round int) {
 	dur := sleepPerRound * time.Duration(round)
@@ -69,6 +76,14 @@ func sleep(round int) {
 }
 
 func (c *client) register() (*rkvpb.RegisterResponse, error) {
+	if atomic.LoadInt64(&c.inFlight) > maxInFlight {
+		return nil, ErrMaxInFlightReached
+	}
+	atomic.AddInt64(&c.inFlight, 1)
+	defer func() {
+		atomic.AddInt64(&c.inFlight, -1)
+	}()
+
 	c.s.writeReqs.Add(1)
 	timer := metrics.NewTimer(c.s.writeLatency)
 
@@ -99,6 +114,14 @@ func (c *client) register() (*rkvpb.RegisterResponse, error) {
 }
 
 func (c *client) lookup() (*rkvpb.LookupResponse, error) {
+	if atomic.LoadInt64(&c.inFlight) > maxInFlight {
+		return nil, ErrMaxInFlightReached
+	}
+	atomic.AddInt64(&c.inFlight, 1)
+	defer func() {
+		atomic.AddInt64(&c.inFlight, -1)
+	}()
+
 	c.s.readReqs.Add(1)
 	timer := metrics.NewTimer(c.s.readLatency)
 
@@ -132,6 +155,14 @@ func (c *client) lookup() (*rkvpb.LookupResponse, error) {
 }
 
 func (c *client) insert() (*rkvpb.InsertResponse, error) {
+	if atomic.LoadInt64(&c.inFlight) > maxInFlight {
+		return nil, ErrMaxInFlightReached
+	}
+	atomic.AddInt64(&c.inFlight, 1)
+	defer func() {
+		atomic.AddInt64(&c.inFlight, -1)
+	}()
+
 	c.s.writeReqs.Add(1)
 	timer := metrics.NewTimer(c.s.writeLatency)
 
