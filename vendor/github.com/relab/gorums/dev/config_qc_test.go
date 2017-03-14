@@ -11,12 +11,15 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	qc "github.com/relab/gorums/dev"
 
 	"golang.org/x/net/context"
+
+	"strconv"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -324,7 +327,7 @@ func TestBasicRegisterUsingFuture(t *testing.T) {
 	}
 	t.Logf("rreply: %v\n", rreply)
 	if rreply.Value != state.Value {
-		t.Fatalf("read future reply:\ngot:\n%v\nwant:\n%v", rreply.State, state)
+		t.Fatalf("read future reply:\ngot:\n%v\nwant:\n%v", rreply, state)
 	}
 }
 
@@ -555,8 +558,8 @@ func TestBasicCorrectable(t *testing.T) {
 		if level != LevelStrong {
 			t.Fatalf("read correctable: get: got level %v, want %v", level, LevelStrong)
 		}
-		if reply.State.Value != stateTwo.Value {
-			t.Fatalf("read correctable: get: reply:\ngot:\n%v\nwant:\n%v", reply.State, stateTwo)
+		if reply.Value != stateTwo.Value {
+			t.Fatalf("read correctable: get: reply:\ngot:\n%v\nwant:\n%v", reply.Value, stateTwo)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatalf("read correctable: was not done and call did not timeout using context")
@@ -717,7 +720,7 @@ func TestCorrectablePrelim(t *testing.T) {
 		Timestamp: 100,
 	}
 
-	// We need the specific implementation so we call the Unlock and PerformReadTwoChan methods.
+	// We need the specific implementation so we call the Unlock and PerformReadPrelimChan methods.
 	regServersImplementation := []*qc.RegisterServerLockedWithState{
 		qc.NewRegisterServerLockedWithState(stateOne, 2),
 		qc.NewRegisterServerLockedWithState(stateTwo, 2),
@@ -748,14 +751,14 @@ func TestCorrectablePrelim(t *testing.T) {
 	defer mgr.Close()
 
 	ids := mgr.NodeIDs()
-	config, err := mgr.NewConfiguration(ids, &ReadTwoTestQSpec{})
+	config, err := mgr.NewConfiguration(ids, &ReadPrelimTestQSpec{})
 	if err != nil {
 		t.Fatalf("error creating config: %v", err)
 	}
 
 	waitTimeout := time.Second
 	ctx := context.Background()
-	correctable := config.ReadTwoCorrectablePrelim(ctx, &qc.ReadRequest{})
+	correctable := config.ReadPrelim(ctx, &qc.ReadRequest{})
 
 	// We need these watchers for testing to know that a server has replied and
 	// gorums has processed the reply.
@@ -791,7 +794,7 @@ func TestCorrectablePrelim(t *testing.T) {
 		t.Fatal("read correctable prelim: initial get: got reply, want none")
 	}
 
-	regServersImplementation[0].PerformSingleReadTwo()
+	regServersImplementation[0].PerformSingleReadPrelim()
 
 	// Wait for level 1 notification.
 	select {
@@ -819,7 +822,7 @@ func TestCorrectablePrelim(t *testing.T) {
 		t.Fatalf("read correctable prelim: get (1):\ngot reply:\n%v\nwant:\n%v", reply.Value, stateOne.Value)
 	}
 
-	regServersImplementation[0].PerformSingleReadTwo()
+	regServersImplementation[0].PerformSingleReadPrelim()
 
 	// Wait for level 2 notification.
 	select {
@@ -847,7 +850,7 @@ func TestCorrectablePrelim(t *testing.T) {
 		t.Fatalf("read correctable prelim: get (2):\ngot reply:\n%v\nwant:\n%v", reply.Value, stateOne.Value)
 	}
 
-	regServersImplementation[1].PerformSingleReadTwo()
+	regServersImplementation[1].PerformSingleReadPrelim()
 
 	// Wait for level 3 notification.
 	select {
@@ -875,7 +878,7 @@ func TestCorrectablePrelim(t *testing.T) {
 		t.Fatalf("read correctable prelim: get (3):\ngot reply:\n%v\nwant:\n%v", reply.Value, stateTwo.Value)
 	}
 
-	regServersImplementation[1].PerformSingleReadTwo()
+	regServersImplementation[1].PerformSingleReadPrelim()
 
 	// Wait for level 4 notification.
 	select {
@@ -901,6 +904,95 @@ func TestCorrectablePrelim(t *testing.T) {
 	}
 	if reply.Value != stateTwo.Value {
 		t.Fatalf("read correctable prelim: get after done call:\ngot reply:\n%v\nwant:\n%v", reply.Value, stateTwo.Value)
+	}
+}
+
+func TestPerNodeArg(t *testing.T) {
+	defer leakCheck(t)()
+	servers, dialOpts, stopGrpcServe, closeListeners := setup(
+		t,
+		[]regServer{
+			{impl: qc.NewRegisterBasic()},
+			{impl: qc.NewRegisterBasic()},
+			{impl: qc.NewRegisterBasic()},
+		},
+		false,
+	)
+	defer closeListeners(allServers)
+	defer stopGrpcServe(allServers)
+
+	mgrOpts := []qc.ManagerOption{
+		dialOpts,
+		qc.WithTracing(),
+	}
+	mgr, err := qc.NewManager(
+		servers.addrs(),
+		mgrOpts...,
+	)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	defer mgr.Close()
+
+	// Get all all available node ids
+	ids := mgr.NodeIDs()
+
+	// Quorum spec: rq=2. wq=3, n=3, sort by timestamp.
+	qspec := NewRegisterByTimestampQSpec(2, len(ids))
+
+	config, err := mgr.NewConfiguration(ids, qspec)
+	if err != nil {
+		t.Fatalf("error creating config: %v", err)
+	}
+
+	// Construct test state
+	state := make(map[uint32]*qc.State, len(ids))
+	for _, n := range ids {
+		state[n] = &qc.State{Value: fmt.Sprintf("%d", n), Timestamp: time.Now().UnixNano()}
+	}
+
+	// Perform write per node arg call
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	var cnt int64
+	perNodeArg := func(nodeID uint32) *qc.State {
+		if atomic.LoadInt64(&cnt) > 1 {
+			time.Sleep(250 * time.Millisecond)
+			t.Logf("delay sending to node %d\n", nodeID)
+		}
+		atomic.AddInt64(&cnt, 1)
+		t.Logf("sending to node %d\n", nodeID)
+		return &qc.State{
+			Value:     fmt.Sprintf("%d", nodeID),
+			Timestamp: time.Now().UnixNano(),
+		}
+	}
+	wreply, err := config.WritePerNode(ctx, perNodeArg)
+	if err != nil {
+		t.Fatalf("write quorum call error: %v", err)
+	}
+	t.Logf("wreply: %v\n", wreply)
+	if !wreply.New {
+		t.Error("write reply was not marked as new")
+	}
+
+	// Do read call
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	rreply, err := config.Read(ctx, &qc.ReadRequest{})
+	if err != nil {
+		t.Fatalf("read quorum call error: %v", err)
+	}
+	t.Logf("rreply: %v\n", rreply)
+	valNodeID, _ := strconv.ParseUint(rreply.Value, 10, 32)
+	if rreply.State.Value != state[uint32(valNodeID)].Value {
+		t.Fatalf("read reply: got state %v, want state %v", rreply.State.Value, state[uint32(valNodeID)].Value)
+	}
+
+	nodes := mgr.Nodes()
+	for _, m := range nodes {
+		t.Logf("%v", m)
 	}
 }
 
@@ -1009,6 +1101,7 @@ func BenchmarkRead1KQ1N1FutureParallelRemote(b *testing.B) {
 ///////////////////////////////////////////////////////////////
 
 var replySink *qc.ReadReply
+var replySinkFuture *qc.State
 
 func benchmarkRead(b *testing.B, size, rq int, single, parallel, future, remote bool) {
 	var rservers []regServer
@@ -1097,7 +1190,7 @@ func benchmarkRead(b *testing.B, size, rq int, single, parallel, future, remote 
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
 					rf := config.ReadFuture(ctx, &qc.ReadRequest{})
-					replySink, err = rf.Get()
+					replySinkFuture, err = rf.Get()
 					if err != nil {
 						b.Fatalf("read future quorum call error: %v", err)
 					}
@@ -1106,7 +1199,7 @@ func benchmarkRead(b *testing.B, size, rq int, single, parallel, future, remote 
 		} else {
 			for i := 0; i < b.N; i++ {
 				rf := config.ReadFuture(ctx, &qc.ReadRequest{})
-				replySink, err = rf.Get()
+				replySinkFuture, err = rf.Get()
 				if err != nil {
 					b.Fatalf("read future quorum call error: %v", err)
 				}
@@ -1152,6 +1245,7 @@ func BenchmarkWrited1KQ2N3FutureParallelRemote(b *testing.B) {
 ///////////////////////////////////////////////////////////////
 
 var wreplySink *qc.WriteReply
+var wreplySinkFuture *qc.WriteResponse
 
 func benchmarkWrite(b *testing.B, size, wq int, single, parallel, future, remote bool) {
 	var rservers []regServer
@@ -1232,7 +1326,7 @@ func benchmarkWrite(b *testing.B, size, wq int, single, parallel, future, remote
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
 					rf := config.WriteFuture(ctx, state)
-					wreplySink, err = rf.Get()
+					wreplySinkFuture, err = rf.Get()
 					if err != nil {
 						b.Fatalf("write future quorum call error: %v", err)
 					}
@@ -1241,7 +1335,7 @@ func benchmarkWrite(b *testing.B, size, wq int, single, parallel, future, remote
 		} else {
 			for i := 0; i < b.N; i++ {
 				rf := config.WriteFuture(ctx, state)
-				wreplySink, err = rf.Get()
+				wreplySinkFuture, err = rf.Get()
 				if err != nil {
 					b.Fatalf("write future quorum call error: %v", err)
 				}

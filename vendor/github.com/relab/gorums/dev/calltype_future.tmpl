@@ -1,0 +1,134 @@
+
+{{/* Remember to run 'make goldenanddev' after editing this file. */}}
+
+{{if not .IgnoreImports}}
+package {{.PackageName}}
+
+import (
+	"time"
+
+	"golang.org/x/net/context"
+	"golang.org/x/net/trace"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+)
+{{end}}
+
+{{range $elm := .Services}}
+
+{{if .Future}}
+
+/* Methods on Configuration and the future type struct {{.TypeName}} */
+
+// {{.TypeName}} is a future object for an asynchronous {{.MethodName}} quorum call invocation.
+type {{.TypeName}} struct {
+	// the actual reply
+	*{{.FQRespName}}
+	NodeIDs  []uint32
+	err   error
+	c     chan struct{}
+}
+
+// {{.MethodName}} asynchronously invokes a {{.MethodName}} quorum call
+// on configuration c and returns a {{.TypeName}} which can be used to
+// inspect the quorum call reply and error when available.
+func (c *Configuration) {{.MethodName}}(ctx context.Context, arg *{{.FQReqName}}) *{{.TypeName}} {
+	f := &{{.TypeName}}{
+		NodeIDs: make([]uint32, 0, c.n),
+		c:       make(chan struct{}, 1),
+	}
+	go func() {
+		defer close(f.c)
+		c.{{.UnexportedMethodName}}(ctx, f, arg)
+	}()
+	return f
+}
+
+// Get returns the reply and any error associated with the {{.MethodName}}.
+// The method blocks until a reply or error is available.
+func (f *{{.TypeName}}) Get() (*{{.FQRespName}}, error) {
+	<-f.c
+	return f.{{.RespName}}, f.err
+}
+
+// Done reports if a reply and/or error is available for the {{.MethodName}}.
+func (f *{{.TypeName}}) Done() bool {
+	select {
+	case <-f.c:
+		return true
+	default:
+		return false
+	}
+}
+
+/* Unexported types and methods for asynchronous method {{.MethodName}} */
+
+type {{.UnexportedMethodName}}Arg *{{.FQReqName}}
+
+type {{.UnexportedTypeName}} struct {
+	nid   uint32
+	reply *{{.FQRespName}}
+	err   error
+}
+
+func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, resp *{{.TypeName}}, a {{.UnexportedMethodName}}Arg) {
+	{{template "trace" .}}
+
+	replyChan := make(chan {{.UnexportedTypeName}}, c.n)
+
+	if c.mgr.opts.trace {
+		ti.tr.LazyLog(&payload{sent: true, msg: a}, false)
+	}
+
+	for _, n := range c.nodes {
+{{- if .PerNodeArg}}
+		go callGRPC{{.MethodName}}(ctx, n, a(n.id), replyChan)
+{{else}}
+		go callGRPC{{.MethodName}}(ctx, n, a, replyChan)
+{{end -}}
+	}
+
+	var (
+		replyValues = make([]*{{.FQRespName}}, 0, c.n)
+		reply		*{{.FQRespName}}
+		errCount    int
+		quorum      bool
+	)
+
+	for {
+		select {
+		case r := <-replyChan:
+			resp.NodeIDs = append(resp.NodeIDs, r.nid)
+			if r.err != nil {
+				errCount++
+				break
+			}
+			if c.mgr.opts.trace {
+				ti.tr.LazyLog(&payload{sent: false, id: r.nid, msg: r.reply}, false)
+			}
+			replyValues = append(replyValues, r.reply)
+{{- if .QFWithReq}}
+			if reply, quorum = c.qspec.{{.MethodName}}QF(a, replyValues); quorum {
+{{else}}
+			if reply, quorum = c.qspec.{{.MethodName}}QF(replyValues); quorum {
+{{end -}}
+				resp.{{.RespName}}, resp.err = reply, nil
+				return
+			}
+		case <-ctx.Done():
+			resp.{{.RespName}}, resp.err = reply, QuorumCallError{ctx.Err().Error(), errCount, len(replyValues)}
+			return
+		}
+
+		if errCount+len(replyValues) == c.n {
+			resp.{{.RespName}}, resp.err = reply, QuorumCallError{"incomplete call", errCount, len(replyValues)}
+			return
+		}
+	}
+}
+
+{{template "callGRPC" .}}
+
+{{- end -}}
+{{- end -}}
