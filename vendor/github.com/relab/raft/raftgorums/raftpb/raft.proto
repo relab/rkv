@@ -42,13 +42,6 @@ message AppendEntriesResponse {
   bool success = 3;
 }
 
-message AppendEntriesCombined {
-  uint64 term = 1;
-  repeated uint64 matchIndex = 2;
-
-  bool success = 3;
-}
-
 message InstallSnapshotResponse {
   uint64 term = 1;
 }
@@ -56,7 +49,7 @@ message InstallSnapshotResponse {
 message CatchMeUpRequest {
   uint64 followerID = 1;
 
-  uint64 matchIndex = 2;
+  uint64 nextIndex = 2;
 }
 
 message Empty {}

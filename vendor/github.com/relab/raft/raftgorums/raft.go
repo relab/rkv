@@ -99,10 +99,16 @@ type Raft struct {
 
 	rvreqout chan *pb.RequestVoteRequest
 	aereqout chan *pb.AppendEntriesRequest
+	cureqout chan *catchUpReq
 
 	logger logrus.FieldLogger
 
 	metricsEnabled bool
+}
+
+type catchUpReq struct {
+	leaderID   uint64
+	matchIndex uint64
 }
 
 type entryFuture struct {
@@ -138,6 +144,7 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		applyCh:          make(chan *entryFuture, 128),
 		rvreqout:         make(chan *pb.RequestVoteRequest, 128),
 		aereqout:         make(chan *pb.AppendEntriesRequest, 128),
+		cureqout:         make(chan *catchUpReq, 16),
 		logger:           cfg.Logger,
 		metricsEnabled:   cfg.MetricsEnabled,
 	}
@@ -330,6 +337,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 		"requestterm":  req.Term,
 		"leaderid":     req.LeaderID,
 		"prevlogindex": req.PrevLogIndex,
+		"prevlogterm":  req.PrevLogTerm,
 		"commitindex":  req.CommitIndex,
 		"lenentries":   len(req.Entries),
 	})
@@ -382,8 +390,14 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	r.seenLeader = true
 
 	if !success {
+		r.cureqout <- &catchUpReq{
+			leaderID:   req.LeaderID,
+			matchIndex: r.storage.NextIndex() - 1,
+		}
+
 		return &pb.AppendEntriesResponse{
-			Term: req.Term,
+			Term:       req.Term,
+			MatchIndex: r.storage.NextIndex() - 1,
 		}
 	}
 
@@ -392,7 +406,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	if req.CommitIndex < r.commitIndex {
 		return &pb.AppendEntriesResponse{
 			Term:       req.Term,
-			MatchIndex: r.commitIndex,
+			MatchIndex: r.storage.NextIndex() - 1,
 			Success:    success,
 		}
 	}
@@ -444,7 +458,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 
 	reqLogger.WithFields(logrus.Fields{
 		"lensaved":   len(toSave),
-		"lenlog":     r.storage.NextIndex(),
+		"lenlog":     logLen,
 		"matchindex": index,
 		"success":    success,
 	}).Infoln("Saved entries to stable storage")
@@ -760,9 +774,7 @@ LOOP:
 		r.storage.StoreEntries(toSave)
 	}
 
-	// #L1
-	entries := r.getNextEntries(r.nextIndex)
-	r.aereqout <- r.getAppendEntriesRequest(r.nextIndex, entries)
+	r.aereqout <- r.getAppendEntriesRequest(r.nextIndex, nil)
 }
 
 // TODO Assumes caller holds lock on Raft.
@@ -791,14 +803,6 @@ func (r *Raft) getAppendEntriesRequest(nextIndex uint64, entries []*commonpb.Ent
 	prevIndex := nextIndex - 1
 	prevTerm := r.logTerm(prevIndex)
 
-	r.logger.WithFields(logrus.Fields{
-		"prevlogindex": prevIndex,
-		"prevlogterm":  prevTerm,
-		"commitindex":  r.commitIndex,
-		"currentterm":  r.currentTerm,
-		"lenentries":   len(entries),
-	}).Infoln("Sending AppendEntries")
-
 	return &pb.AppendEntriesRequest{
 		LeaderID:     r.id,
 		Term:         r.currentTerm,
@@ -811,7 +815,7 @@ func (r *Raft) getAppendEntriesRequest(nextIndex uint64, entries []*commonpb.Ent
 
 // HandleAppendEntriesResponse must be invoked when receiving an
 // AppendEntriesResponse.
-func (r *Raft) HandleAppendEntriesResponse(response *pb.AppendEntriesCombined, responders int) {
+func (r *Raft) HandleAppendEntriesResponse(response *pb.AppendEntriesResponse, responders int) {
 	r.Lock()
 	defer func() {
 		r.Unlock()
@@ -840,14 +844,14 @@ func (r *Raft) HandleAppendEntriesResponse(response *pb.AppendEntriesCombined, r
 			// Successful heartbeat to a majority.
 			r.resetElection = true
 
-			r.matchIndex = response.MatchIndex[0]
+			r.matchIndex = response.MatchIndex
 			r.nextIndex = r.matchIndex + 1
 
 			return
 		}
 
 		// If AppendEntries was not successful lower match index.
-		r.nextIndex = max(1, response.MatchIndex[0])
+		r.nextIndex = max(1, response.MatchIndex)
 	}
 }
 
