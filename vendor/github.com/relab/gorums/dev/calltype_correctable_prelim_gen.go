@@ -10,7 +10,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-/* Methods on Configuration and the correctable prelim struct ReadPrelimReply */
+/* Exported types and methods for correctable prelim method ReadPrelim */
 
 // ReadPrelimReply is a reference to a correctable quorum call
 // with server side preliminary reply support.
@@ -40,7 +40,7 @@ func (c *Configuration) ReadPrelim(ctx context.Context, args *ReadRequest) *Read
 		donech:  make(chan struct{}),
 	}
 	go func() {
-		c.mgr.readPrelim(ctx, c, corr, args)
+		c.readPrelim(ctx, args, corr)
 	}()
 	return corr
 }
@@ -109,7 +109,7 @@ func (c *ReadPrelimReply) set(reply *State, level int, err error, done bool) {
 	c.Unlock()
 }
 
-/* Methods on Manager for correctable prelim method ReadPrelim */
+/* Unexported types and methods for correctable prelim method ReadPrelim */
 
 type readPrelimReply struct {
 	nid   uint32
@@ -117,11 +117,10 @@ type readPrelimReply struct {
 	err   error
 }
 
-func (m *Manager) readPrelim(ctx context.Context, c *Configuration, corr *ReadPrelimReply, args *ReadRequest) {
+func (c *Configuration) readPrelim(ctx context.Context, a *ReadRequest, resp *ReadPrelimReply) {
 	replyChan := make(chan readPrelimReply, c.n)
-
 	for _, n := range c.nodes {
-		go callGRPCReadPrelimStream(ctx, n, args, replyChan)
+		go callGRPCReadPrelim(ctx, n, a, replyChan)
 	}
 
 	var (
@@ -136,7 +135,7 @@ func (m *Manager) readPrelim(ctx context.Context, c *Configuration, corr *ReadPr
 	for {
 		select {
 		case r := <-replyChan:
-			corr.NodeIDs = appendIfNotPresent(corr.NodeIDs, r.nid)
+			resp.NodeIDs = appendIfNotPresent(resp.NodeIDs, r.nid)
 			if r.err != nil {
 				errCount++
 				break
@@ -144,28 +143,28 @@ func (m *Manager) readPrelim(ctx context.Context, c *Configuration, corr *ReadPr
 			replyValues = append(replyValues, r.reply)
 			reply, rlevel, quorum = c.qspec.ReadPrelimQF(replyValues)
 			if quorum {
-				corr.set(reply, rlevel, nil, true)
+				resp.set(reply, rlevel, nil, true)
 				return
 			}
 			if rlevel > clevel {
 				clevel = rlevel
-				corr.set(reply, rlevel, nil, false)
+				resp.set(reply, rlevel, nil, false)
 			}
 		case <-ctx.Done():
-			corr.set(reply, clevel, QuorumCallError{ctx.Err().Error(), errCount, len(replyValues)}, true)
+			resp.set(reply, clevel, QuorumCallError{ctx.Err().Error(), errCount, len(replyValues)}, true)
 			return
 		}
 
 		if errCount == c.n { // Can't rely on reply count.
-			corr.set(reply, clevel, QuorumCallError{"incomplete call", errCount, len(replyValues)}, true)
+			resp.set(reply, clevel, QuorumCallError{"incomplete call", errCount, len(replyValues)}, true)
 			return
 		}
 	}
 }
 
-func callGRPCReadPrelimStream(ctx context.Context, node *Node, args *ReadRequest, replyChan chan<- readPrelimReply) {
+func callGRPCReadPrelim(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readPrelimReply) {
 	x := NewRegisterClient(node.conn)
-	y, err := x.ReadPrelim(ctx, args)
+	y, err := x.ReadPrelim(ctx, arg)
 	if err != nil {
 		replyChan <- readPrelimReply{node.id, nil, err}
 		return

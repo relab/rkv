@@ -1,5 +1,5 @@
-hash: b2c16b7c9a3ce116ffb1c7f9940bede3c57f8a415506d30b51e0a4bc3451f773
-updated: 2017-03-16T01:23:16.437141651+01:00
+hash: 3e55cdac972dba43a38959f67882096a73d4ef78e8e8d183e2ac09fc63d16756
+updated: 2017-03-17T13:21:43.388524203+01:00
 imports:
 - name: github.com/beorn7/perks
   version: 4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9
@@ -8,7 +8,7 @@ imports:
 - name: github.com/boltdb/bolt
   version: e9cf4fae01b5a8ff89d0ec6b32f0d9c9f79aefdd
 - name: github.com/go-kit/kit
-  version: b6f30a2e0632f5722fb26d8765d726335b79d3e6
+  version: c9c72196210e5150c969db327f8e8bd939093435
   subpackages:
   - metrics
   - metrics/internal/lv
@@ -53,7 +53,7 @@ imports:
   subpackages:
   - xfs
 - name: github.com/relab/gorums
-  version: e6793ed4da06ec83111ee6dcfd149bbe81a731d1
+  version: 98b4600ca1c96a17a69fac835739c6cafd7b7a50
 - name: github.com/relab/raft
   version: d2095a7144f2846dfd28f8a1458bf3bd8f1531a7
   subpackages:

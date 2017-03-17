@@ -100,7 +100,7 @@ func TestBasicRegister(t *testing.T) {
 	}
 	t.Logf("rreply: %v\n", rreply)
 	if rreply.Value != state.Value {
-		t.Fatalf("read reply: got state %v, want state %v", rreply.State, state)
+		t.Fatalf("read reply: got state %v, want state %v", rreply, state)
 	}
 
 	nodes := mgr.Nodes()
@@ -390,7 +390,7 @@ func TestBasicRegisterWithWriteAsync(t *testing.T) {
 	}
 	t.Logf("rreply: %v\n", rreply)
 	if rreply.Value != stateOne.Value {
-		t.Fatalf("read reply:\ngot:\n%v\nwant:\n%v", rreply.State, stateOne)
+		t.Fatalf("read reply:\ngot:\n%v\nwant:\n%v", rreply, stateOne)
 	}
 
 	stateTwo := &qc.State{
@@ -417,7 +417,7 @@ func TestBasicRegisterWithWriteAsync(t *testing.T) {
 	}
 	t.Logf("rreply: %v\n", rreply)
 	if rreply.Value != stateTwo.Value {
-		t.Fatalf("read reply:\ngot:\n%v\nwant:\n%v", rreply.State, stateTwo)
+		t.Fatalf("read reply:\ngot:\n%v\nwant:\n%v", rreply, stateTwo)
 	}
 }
 
@@ -987,14 +987,34 @@ func TestPerNodeArg(t *testing.T) {
 	}
 	t.Logf("rreply: %v\n", rreply)
 	valNodeID, _ := strconv.ParseUint(rreply.Value, 10, 32)
-	if rreply.State.Value != state[uint32(valNodeID)].Value {
-		t.Fatalf("read reply: got state %v, want state %v", rreply.State.Value, state[uint32(valNodeID)].Value)
+	if rreply.Value != state[uint32(valNodeID)].Value {
+		t.Fatalf("read reply: got state %v, want state %v", rreply.Value, state[uint32(valNodeID)].Value)
 	}
 
-	nodes := mgr.Nodes()
-	for _, m := range nodes {
-		t.Logf("%v", m)
+	// Test nil return value from perNodeArg to indicate that we should ignore a node
+
+	/* DISABLED TODO need to implement logic to test for nil in quorumcall.tmpl
+	nodeToIgnore := mgr.NodeIDs()[0]
+	perNodeArgNil := func(req qc.State, nodeID uint32) *qc.State {
+		if nodeID == nodeToIgnore {
+			t.Logf("ignoring node %d\n", nodeID)
+			return nil
+		}
+		t.Logf("sending to node %d\n", nodeID)
+		req.Value = fmt.Sprintf("%d", nodeID)
+		req.Timestamp = time.Now().UnixNano()
+		return &req
 	}
+	wreply, err = config.WritePerNode(ctx, req, perNodeArgNil)
+	if err != nil {
+		t.Fatalf("write quorum call error: %v", err)
+	}
+	t.Logf("wreply: %v\n", wreply)
+	if !wreply.New {
+		t.Error("write reply was not marked as new")
+	}
+	*/
+
 }
 
 ///////////////////////////////////////////////////////////////
@@ -1101,8 +1121,7 @@ func BenchmarkRead1KQ1N1FutureParallelRemote(b *testing.B) {
 
 ///////////////////////////////////////////////////////////////
 
-var replySink *qc.ReadReply
-var replySinkFuture *qc.State
+var replySink *qc.State
 
 func benchmarkRead(b *testing.B, size, rq int, single, parallel, future, remote bool) {
 	var rservers []regServer
@@ -1191,7 +1210,7 @@ func benchmarkRead(b *testing.B, size, rq int, single, parallel, future, remote 
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
 					rf := config.ReadFuture(ctx, &qc.ReadRequest{})
-					replySinkFuture, err = rf.Get()
+					replySink, err = rf.Get()
 					if err != nil {
 						b.Fatalf("read future quorum call error: %v", err)
 					}
@@ -1200,7 +1219,7 @@ func benchmarkRead(b *testing.B, size, rq int, single, parallel, future, remote 
 		} else {
 			for i := 0; i < b.N; i++ {
 				rf := config.ReadFuture(ctx, &qc.ReadRequest{})
-				replySinkFuture, err = rf.Get()
+				replySink, err = rf.Get()
 				if err != nil {
 					b.Fatalf("read future quorum call error: %v", err)
 				}
@@ -1245,8 +1264,7 @@ func BenchmarkWrited1KQ2N3FutureParallelRemote(b *testing.B) {
 
 ///////////////////////////////////////////////////////////////
 
-var wreplySink *qc.WriteReply
-var wreplySinkFuture *qc.WriteResponse
+var wreplySink *qc.WriteResponse
 
 func benchmarkWrite(b *testing.B, size, wq int, single, parallel, future, remote bool) {
 	var rservers []regServer
@@ -1327,7 +1345,7 @@ func benchmarkWrite(b *testing.B, size, wq int, single, parallel, future, remote
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
 					rf := config.WriteFuture(ctx, state)
-					wreplySinkFuture, err = rf.Get()
+					wreplySink, err = rf.Get()
 					if err != nil {
 						b.Fatalf("write future quorum call error: %v", err)
 					}
@@ -1336,7 +1354,7 @@ func benchmarkWrite(b *testing.B, size, wq int, single, parallel, future, remote
 		} else {
 			for i := 0; i < b.N; i++ {
 				rf := config.WriteFuture(ctx, state)
-				wreplySinkFuture, err = rf.Get()
+				wreplySink, err = rf.Get()
 				if err != nil {
 					b.Fatalf("write future quorum call error: %v", err)
 				}

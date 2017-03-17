@@ -7,13 +7,13 @@ const calltype_common_definitions_tmpl = `{{/* Remember to run 'make goldenandde
 {{/* calltype_common_definitions.tmpl will only be executed for each 'calltype' template. */}}
 
 {{define "callGRPC"}}
-func callGRPC{{.MethodName}}(ctx context.Context, node *Node, args *{{.FQReqName}}, replyChan chan<- {{.UnexportedTypeName}}) {
+func callGRPC{{.MethodName}}(ctx context.Context, node *Node, arg *{{.FQReqName}}, replyChan chan<- {{.UnexportedTypeName}}) {
 	reply := new({{.FQRespName}})
 	start := time.Now()
 	err := grpc.Invoke(
 		ctx,
 		"/{{.ServPackageName}}.{{.ServName}}/{{.MethodName}}",
-		args,
+		arg,
 		reply,
 		node.conn,
 	)
@@ -38,6 +38,7 @@ func callGRPC{{.MethodName}}(ctx context.Context, node *Node, args *{{.FQReqName
 			ti.firstLine.deadline = deadline.Sub(time.Now())
 		}
 		ti.tr.LazyLog(&ti.firstLine, false)
+		ti.tr.LazyLog(&payload{sent: true, msg: a}, false)
 
 		defer func() {
 			ti.tr.LazyLog(&qcresult{
@@ -49,6 +50,50 @@ func callGRPC{{.MethodName}}(ctx context.Context, node *Node, args *{{.FQReqName
 				ti.tr.SetError()
 			}
 		}()
+	}
+{{end}}
+
+{{define "simple_trace"}}
+	var ti traceInfo
+	if c.mgr.opts.trace {
+		ti.tr = trace.New("gorums."+c.tstring()+".Sent", "{{.MethodName}}")
+		defer ti.tr.Finish()
+
+		ti.firstLine.cid = c.id
+		if deadline, ok := ctx.Deadline(); ok {
+			ti.firstLine.deadline = deadline.Sub(time.Now())
+		}
+		ti.tr.LazyLog(&ti.firstLine, false)
+		ti.tr.LazyLog(&payload{sent: true, msg: a}, false)
+
+		defer func() {
+			ti.tr.LazyLog(&qcresult{
+				reply: resp,
+				err:   err,
+			}, false)
+			if err != nil {
+				ti.tr.SetError()
+			}
+		}()
+	}
+{{end}}
+
+{{define "unexported_method_signature"}}
+{{- if .PerNodeArg}}
+func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, a *{{.FQReqName}}, f func(arg {{.FQReqName}}, nodeID uint32) *{{.FQReqName}}, resp *{{.TypeName}}) {
+{{- else}}
+func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, a *{{.FQReqName}}, resp *{{.TypeName}}) {
+{{- end -}}
+{{end}}
+
+{{define "callLoop"}}
+	replyChan := make(chan {{.UnexportedTypeName}}, c.n)
+	for _, n := range c.nodes {
+{{- if .PerNodeArg}}
+		go callGRPC{{.MethodName}}(ctx, n, f(*a, n.id), replyChan)
+{{else}}
+		go callGRPC{{.MethodName}}(ctx, n, a, replyChan)
+{{end -}}
 	}
 {{end}}
 `
@@ -74,13 +119,13 @@ import (
 
 {{if .Correctable}}
 
-/* Methods on Configuration and the correctable struct {{.TypeName}} */
+/* Exported types and methods for correctable method {{.MethodName}} */
 
 // {{.TypeName}} is a reference to a correctable {{.MethodName}} quorum call.
 type {{.TypeName}} struct {
 	sync.Mutex
 	// the actual reply
-	*{{.FQRespName}}
+	*{{.FQCustomRespName}}
 	NodeIDs  []uint32
 	level    int
 	err      error
@@ -103,7 +148,7 @@ func (c *Configuration) {{.MethodName}}(ctx context.Context, args *{{.FQReqName}
 		donech:  make(chan struct{}),
 	}
 	go func() {
-		c.mgr.{{.UnexportedMethodName}}(ctx, c, corr, args)
+		c.{{.UnexportedMethodName}}(ctx, args, corr)
 	}()
 	return corr
 }
@@ -113,10 +158,10 @@ func (c *Configuration) {{.MethodName}}(ctx context.Context, args *{{.FQReqName}
 // itermidiate) reply or error is available. Level is set to LevelNotSet if no
 // reply has yet been received. The Done or Watch methods should be used to
 // ensure that a reply is available.
-func (c *{{.TypeName}}) Get() (*{{.FQRespName}}, int, error) {
+func (c *{{.TypeName}}) Get() (*{{.FQCustomRespName}}, int, error) {
 	c.Lock()
 	defer c.Unlock()
-	return c.{{.RespName}}, c.level, c.err
+	return c.{{.CustomRespName}}, c.level, c.err
 }
 
 // Done returns a channel that's closed when the correctable {{.MethodName}}
@@ -146,13 +191,13 @@ func (c *{{.TypeName}}) Watch(level int) <-chan struct{} {
 	return ch
 }
 
-func (c *{{.TypeName}}) set(reply *{{.FQRespName}}, level int, err error, done bool) {
+func (c *{{.TypeName}}) set(reply *{{.FQCustomRespName}}, level int, err error, done bool) {
 	c.Lock()
 	if c.done {
 		c.Unlock()
 		panic("set(...) called on a done correctable")
 	}
-	c.{{.RespName}}, c.level, c.err, c.done = reply, level, err, done
+	c.{{.CustomRespName}}, c.level, c.err, c.done = reply, level, err, done
 	if done {
 		close(c.donech)
 		for _, watcher := range c.watchers {
@@ -172,7 +217,7 @@ func (c *{{.TypeName}}) set(reply *{{.FQRespName}}, level int, err error, done b
 	c.Unlock()
 }
 
-/* Methods on Manager for correctable method {{.MethodName}} */
+/* Unexported types and methods for correctable method {{.MethodName}} */
 
 type {{.UnexportedTypeName}} struct {
 	nid   uint32
@@ -180,17 +225,13 @@ type {{.UnexportedTypeName}} struct {
 	err   error
 }
 
-func (m *Manager) {{.UnexportedMethodName}}(ctx context.Context, c *Configuration, corr *{{.TypeName}}, args *{{.FQReqName}}) {
-	replyChan := make(chan {{.UnexportedTypeName}}, c.n)
-
-	for _, n := range c.nodes {
-		go callGRPC{{.MethodName}}(ctx, n, args, replyChan)
-	}
+{{template "unexported_method_signature" . -}}
+	{{- template "callLoop" .}}
 
 	var (
 		replyValues = make([]*{{.FQRespName}}, 0, c.n)
 		clevel      = LevelNotSet
-		reply		*{{.FQRespName}}
+		reply		*{{.FQCustomRespName}}
 		rlevel      int
 		errCount    int
 		quorum      bool
@@ -199,32 +240,32 @@ func (m *Manager) {{.UnexportedMethodName}}(ctx context.Context, c *Configuratio
 	for {
 		select {
 		case r := <-replyChan:
-			corr.NodeIDs = append(corr.NodeIDs, r.nid)
+			resp.NodeIDs = append(resp.NodeIDs, r.nid)
 			if r.err != nil {
 				errCount++
 				break
 			}
 			replyValues = append(replyValues, r.reply)
 {{- if .QFWithReq}}
-			reply, rlevel, quorum = c.qspec.{{.MethodName}}QF(args, replyValues)
+			reply, rlevel, quorum = c.qspec.{{.MethodName}}QF(a, replyValues)
 {{else}}
 			reply, rlevel, quorum = c.qspec.{{.MethodName}}QF(replyValues)
 {{end -}}
 			if quorum {
-				corr.set(reply, rlevel, nil, true)
+				resp.set(reply, rlevel, nil, true)
 				return
 			}
 			if rlevel > clevel {
 				clevel = rlevel
-				corr.set(reply, rlevel, nil, false)
+				resp.set(reply, rlevel, nil, false)
 			}
 		case <-ctx.Done():
-			corr.set(reply, clevel, QuorumCallError{ctx.Err().Error(), errCount, len(replyValues)}, true)
+			resp.set(reply, clevel, QuorumCallError{ctx.Err().Error(), errCount, len(replyValues)}, true)
 			return
 		}
 
 		if errCount+len(replyValues) == c.n {
-			corr.set(reply, clevel, QuorumCallError{"incomplete call", errCount, len(replyValues)}, true)
+			resp.set(reply, clevel, QuorumCallError{"incomplete call", errCount, len(replyValues)}, true)
 			return
 		}
 	}
@@ -254,14 +295,14 @@ import (
 
 {{if .CorrectablePrelim}}
 
-/* Methods on Configuration and the correctable prelim struct {{.TypeName}} */
+/* Exported types and methods for correctable prelim method {{.MethodName}} */
 
 // {{.TypeName}} is a reference to a correctable quorum call
 // with server side preliminary reply support.
 type {{.TypeName}} struct {
 	sync.Mutex
 	// the actual reply
-	*{{.FQRespName}}
+	*{{.FQCustomRespName}}
 	NodeIDs  []uint32
 	level    int
 	err      error
@@ -284,7 +325,7 @@ func (c *Configuration) {{.MethodName}}(ctx context.Context, args *{{.FQReqName}
 		donech: make(chan struct{}),
 	}
 	go func() {
-		c.mgr.{{.UnexportedMethodName}}(ctx, c, corr, args)
+		c.{{.UnexportedMethodName}}(ctx, args, corr)
 	}()
 	return corr
 }
@@ -294,10 +335,10 @@ func (c *Configuration) {{.MethodName}}(ctx context.Context, args *{{.FQReqName}
 // itermidiate) reply or error is available. Level is set to LevelNotSet if no
 // reply has yet been received. The Done or Watch methods should be used to
 // ensure that a reply is available.
-func (c *{{.TypeName}}) Get() (*{{.FQRespName}}, int, error) {
+func (c *{{.TypeName}}) Get() (*{{.FQCustomRespName}}, int, error) {
 	c.Lock()
 	defer c.Unlock()
-	return c.{{.RespName}}, c.level, c.err
+	return c.{{.CustomRespName}}, c.level, c.err
 }
 
 // Done returns a channel that's closed when the correctable {{.MethodName}}
@@ -327,13 +368,13 @@ func (c *{{.TypeName}}) Watch(level int) <-chan struct{} {
 	return ch
 }
 
-func (c *{{.TypeName}}) set(reply *{{.FQRespName}}, level int, err error, done bool) {
+func (c *{{.TypeName}}) set(reply *{{.FQCustomRespName}}, level int, err error, done bool) {
 	c.Lock()
 	if c.done {
 		c.Unlock()
 		panic("set(...) called on a done correctable")
 	}
-	c.{{.RespName}}, c.level, c.err, c.done = reply, level, err, done
+	c.{{.CustomRespName}}, c.level, c.err, c.done = reply, level, err, done
 	if done {
 		close(c.donech)
 		for _, watcher := range c.watchers {
@@ -353,7 +394,7 @@ func (c *{{.TypeName}}) set(reply *{{.FQRespName}}, level int, err error, done b
 	c.Unlock()
 }
 
-/* Methods on Manager for correctable prelim method {{.MethodName}} */
+/* Unexported types and methods for correctable prelim method {{.MethodName}} */
 
 type {{.UnexportedTypeName}} struct {
 	nid   uint32
@@ -361,17 +402,13 @@ type {{.UnexportedTypeName}} struct {
 	err   error
 }
 
-func (m *Manager) {{.UnexportedMethodName}}(ctx context.Context, c *Configuration, corr *{{.TypeName}}, args *{{.FQReqName}}) {
-	replyChan := make(chan {{.UnexportedTypeName}}, c.n)
-
-	for _, n := range c.nodes {
-		go callGRPC{{.MethodName}}Stream(ctx, n, args, replyChan)
-	}
+{{template "unexported_method_signature" . -}}
+	{{- template "callLoop" .}}
 
 	var (
 		replyValues = make([]*{{.FQRespName}}, 0, c.n*2)
 		clevel      = LevelNotSet
-		reply		*{{.FQRespName}}
+		reply		*{{.FQCustomRespName}}
 		rlevel      int
 		errCount    int
 		quorum      bool
@@ -380,40 +417,40 @@ func (m *Manager) {{.UnexportedMethodName}}(ctx context.Context, c *Configuratio
 	for {
 		select {
 		case r := <-replyChan:
-			corr.NodeIDs = appendIfNotPresent(corr.NodeIDs, r.nid)
+			resp.NodeIDs = appendIfNotPresent(resp.NodeIDs, r.nid)
 			if r.err != nil {
 				errCount++
 				break
 			}
 			replyValues = append(replyValues, r.reply)
 {{- if .QFWithReq}}
-			reply, rlevel, quorum = c.qspec.{{.MethodName}}QF(args, replyValues)
+			reply, rlevel, quorum = c.qspec.{{.MethodName}}QF(a, replyValues)
 {{else}}
 			reply, rlevel, quorum = c.qspec.{{.MethodName}}QF(replyValues)
 {{end -}}
 			if quorum {
-				corr.set(reply, rlevel, nil, true)
+				resp.set(reply, rlevel, nil, true)
 				return
 			}
 			if rlevel > clevel {
 				clevel = rlevel
-				corr.set(reply, rlevel, nil, false)
+				resp.set(reply, rlevel, nil, false)
 			}
 		case <-ctx.Done():
-			corr.set(reply, clevel, QuorumCallError{ctx.Err().Error(), errCount, len(replyValues)}, true)
+			resp.set(reply, clevel, QuorumCallError{ctx.Err().Error(), errCount, len(replyValues)}, true)
 			return
 		}
 
 		if errCount == c.n { // Can't rely on reply count.
-			corr.set(reply, clevel, QuorumCallError{"incomplete call", errCount, len(replyValues)}, true)
+			resp.set(reply, clevel, QuorumCallError{"incomplete call", errCount, len(replyValues)}, true)
 			return
 		}
 	}
 }
 
-func callGRPC{{.MethodName}}Stream(ctx context.Context, node *Node, args *{{.FQReqName}}, replyChan chan<- {{.UnexportedTypeName}}) {
+func callGRPC{{.MethodName}}(ctx context.Context, node *Node, arg *{{.FQReqName}}, replyChan chan<- {{.UnexportedTypeName}}) {
 	x := New{{.ServName}}Client(node.conn)
-	y, err := x.{{.MethodName}}(ctx, args)
+	y, err := x.{{.MethodName}}(ctx, arg)
 	if err != nil {
 		replyChan <- {{.UnexportedTypeName}}{node.id, nil, err}
 		return
@@ -456,7 +493,7 @@ import (
 
 {{if .Future}}
 
-/* Methods on Configuration and the future type struct {{.TypeName}} */
+/* Exported types and methods for asynchronous quorum call method {{.MethodName}} */
 
 // {{.TypeName}} is a future object for an asynchronous {{.MethodName}} quorum call invocation.
 type {{.TypeName}} struct {
@@ -467,9 +504,31 @@ type {{.TypeName}} struct {
 	c     chan struct{}
 }
 
-// {{.MethodName}} asynchronously invokes a {{.MethodName}} quorum call
-// on configuration c and returns a {{.TypeName}} which can be used to
-// inspect the quorum call reply and error when available.
+{{if .PerNodeArg}}
+
+// {{.MethodName}} asynchronously invokes a quorum call on each node in
+// configuration c, with the argument returned by the provided perNode
+// function and returns the result as a {{.TypeName}}, which can be used
+// to inspect the quorum call reply and error when available. 
+// The perNode function takes the provided arg and returns a {{.FQReqName}}
+// object to be passed to the given nodeID.
+func (c *Configuration) {{.MethodName}}(ctx context.Context, arg *{{.FQReqName}}, perNode func(arg {{.FQReqName}}, nodeID uint32) *{{.FQReqName}}) *{{.TypeName}} {
+	f := &{{.TypeName}}{
+		NodeIDs: make([]uint32, 0, c.n),
+		c:       make(chan struct{}, 1),
+	}
+	go func() {
+		defer close(f.c)
+		c.{{.UnexportedMethodName}}(ctx, arg, perNode, f)
+	}()
+	return f
+}
+
+{{else}}
+
+// {{.MethodName}} asynchronously invokes a quorum call on configuration c
+// and returns a {{.TypeName}} which can be used to inspect the quorum call
+// reply and error when available.
 func (c *Configuration) {{.MethodName}}(ctx context.Context, arg *{{.FQReqName}}) *{{.TypeName}} {
 	f := &{{.TypeName}}{
 		NodeIDs: make([]uint32, 0, c.n),
@@ -477,10 +536,12 @@ func (c *Configuration) {{.MethodName}}(ctx context.Context, arg *{{.FQReqName}}
 	}
 	go func() {
 		defer close(f.c)
-		c.{{.UnexportedMethodName}}(ctx, f, arg)
+		c.{{.UnexportedMethodName}}(ctx, arg, f)
 	}()
 	return f
 }
+
+{{- end}}
 
 // Get returns the reply and any error associated with the {{.MethodName}}.
 // The method blocks until a reply or error is available.
@@ -499,9 +560,7 @@ func (f *{{.TypeName}}) Done() bool {
 	}
 }
 
-/* Unexported types and methods for asynchronous method {{.MethodName}} */
-
-type {{.UnexportedMethodName}}Arg *{{.FQReqName}}
+/* Unexported types and methods for asynchronous quorum call method {{.MethodName}} */
 
 type {{.UnexportedTypeName}} struct {
 	nid   uint32
@@ -509,22 +568,10 @@ type {{.UnexportedTypeName}} struct {
 	err   error
 }
 
-func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, resp *{{.TypeName}}, a {{.UnexportedMethodName}}Arg) {
-	{{template "trace" .}}
+{{template "unexported_method_signature" .}}
+	{{- template "trace" .}}
 
-	replyChan := make(chan {{.UnexportedTypeName}}, c.n)
-
-	if c.mgr.opts.trace {
-		ti.tr.LazyLog(&payload{sent: true, msg: a}, false)
-	}
-
-	for _, n := range c.nodes {
-{{- if .PerNodeArg}}
-		go callGRPC{{.MethodName}}(ctx, n, a(n.id), replyChan)
-{{else}}
-		go callGRPC{{.MethodName}}(ctx, n, a, replyChan)
-{{end -}}
-	}
+	{{template "callLoop" .}}
 
 	var (
 		replyValues = make([]*{{.FQRespName}}, 0, c.n)
@@ -584,11 +631,15 @@ import "golang.org/x/net/context"
 
 {{if .Multicast}}
 
+/* Exported types and methods for multicast method {{.MethodName}} */
+
 // {{.MethodName}} is a one-way multicast call on all nodes in configuration c,
 // using the same argument arg. The call is asynchronous and has no return value.
 func (c *Configuration) {{.MethodName}}(ctx context.Context, arg *{{.FQReqName}}) error {
 	return c.{{.UnexportedMethodName}}(ctx, arg)
 }
+
+/* Unexported types and methods for multicast method {{.MethodName}} */
 
 func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, arg *{{.FQReqName}}) error {
 	for _, node := range c.nodes {
@@ -616,7 +667,6 @@ const calltype_quorumcall_tmpl = `
 package {{.PackageName}}
 
 import (
-	"fmt"
 	"time"
 
 	"golang.org/x/net/context"
@@ -631,49 +681,29 @@ import (
 
 {{if .QuorumCall}}
 
-/* Methods on Configuration and the quorum call struct {{.MethodName}} */
-
-//TODO Make this a customizable struct that replaces FQRespName together with typedecl option in gogoprotobuf. 
-//(This file could maybe hold all types of structs for the different call semantics)
-
-// {{.TypeName}} encapsulates the reply from a {{.MethodName}} quorum call.
-// It contains the id of each node of the quorum that replied and a single reply.
-type {{.TypeName}} struct {
-	// the actual reply
-	*{{.FQCustomRespName}}
-	NodeIDs []uint32
-	err		error
-}
-
-func (r {{.TypeName}}) String() string {
-	return fmt.Sprintf("node ids: %v | answer: %v", r.NodeIDs, r.{{.CustomRespName}})
-}
+/* Exported types and methods for quorum call method {{.MethodName}} */
 
 {{if .PerNodeArg}}
 
-type {{.UnexportedMethodName}}Arg func(req {{.FQReqName}}, nodeID uint32) *{{.FQReqName}}
-
 // {{.MethodName}} is invoked as a quorum call on each node in configuration c,
 // with the argument returned by the provided perNode function and returns the
-// result as a {{.TypeName}}. The perNode function returns a *{{.FQReqName}}
-// object to be passed to the given nodeID.
-func (c *Configuration) {{.MethodName}}(ctx context.Context, arg *{{.FQReqName}}, perNode func(req {{.FQReqName}}, nodeID uint32) *{{.FQReqName}}) (*{{.TypeName}}, error) {
+// result. The perNode function takes a request arg and
+// returns a {{.FQReqName}} object to be passed to the given nodeID.
+func (c *Configuration) {{.MethodName}}(ctx context.Context, arg *{{.FQReqName}}, perNode func(arg {{.FQReqName}}, nodeID uint32) *{{.FQReqName}}) (*{{.FQCustomRespName}}, error) {
 	return c.{{.UnexportedMethodName}}(ctx, arg, perNode)
 }
 
 {{else}}
 
-type {{.UnexportedMethodName}}Arg *{{.FQReqName}}
-
 // {{.MethodName}} is invoked as a quorum call on all nodes in configuration c,
-// using the same argument arg, and returns the result as a {{.TypeName}}.
-func (c *Configuration) {{.MethodName}}(ctx context.Context, arg *{{.FQReqName}}) (*{{.TypeName}}, error) {
+// using the same argument arg, and returns the result.
+func (c *Configuration) {{.MethodName}}(ctx context.Context, arg *{{.FQReqName}}) (*{{.FQCustomRespName}}, error) {
 	return c.{{.UnexportedMethodName}}(ctx, arg)
 }
 
 {{- end}}
 
-/* Methods on Manager for quorum call method {{.MethodName}} */
+/* Unexported types and methods for quorum call method {{.MethodName}} */
 
 type {{.UnexportedTypeName}} struct {
 	nid   uint32
@@ -682,27 +712,14 @@ type {{.UnexportedTypeName}} struct {
 }
 
 {{- if .PerNodeArg}}
-func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, a *{{.FQReqName}}, f {{.UnexportedMethodName}}Arg) (resp *{{.TypeName}}, err error) {
-{{else}}
-func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, a {{.UnexportedMethodName}}Arg) (resp *{{.TypeName}}, err error) {
-{{end -}}
-	{{template "trace" .}}
+func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, a *{{.FQReqName}}, f func(arg {{.FQReqName}}, nodeID uint32) *{{.FQReqName}}) (resp *{{.FQCustomRespName}}, err error) {
+{{- else}}
+func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, a *{{.FQReqName}}) (resp *{{.FQCustomRespName}}, err error) {
+{{- end -}}
+	{{- template "simple_trace" .}}
 
-	replyChan := make(chan {{.UnexportedTypeName}}, c.n)
+	{{template "callLoop" .}}
 
-	if c.mgr.opts.trace {
-		ti.tr.LazyLog(&payload{sent: true, msg: a}, false)
-	}
-
-	for _, n := range c.nodes {
-{{- if .PerNodeArg}}
-		go callGRPC{{.MethodName}}(ctx, n, f(*a, n.id), replyChan)
-{{else}}
-		go callGRPC{{.MethodName}}(ctx, n, a, replyChan)
-{{end -}}
-	}
-
-	resp = &{{.TypeName}}{NodeIDs: make([]uint32, 0, c.n)}
 	var (
 		replyValues = make([]*{{.FQRespName}}, 0, c.n)
 		errCount    int
@@ -712,7 +729,6 @@ func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, a {{.Unex
 	for {
 		select {
 		case r := <-replyChan:
-			resp.NodeIDs = append(resp.NodeIDs, r.nid)
 			if r.err != nil {
 				errCount++
 				break
@@ -722,9 +738,9 @@ func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, a {{.Unex
 			}
 			replyValues = append(replyValues, r.reply)
 {{- if .QFWithReq}}
-			if resp.{{.CustomRespName}}, quorum = c.qspec.{{.MethodName}}QF(a, replyValues); quorum {
+			if resp, quorum = c.qspec.{{.MethodName}}QF(a, replyValues); quorum {
 {{else}}
-			if resp.{{.CustomRespName}}, quorum = c.qspec.{{.MethodName}}QF(replyValues); quorum {
+			if resp, quorum = c.qspec.{{.MethodName}}QF(replyValues); quorum {
 {{end -}}
 				return resp, nil
 			}
@@ -836,8 +852,16 @@ package {{.PackageName}}
 type QuorumSpec interface {
 {{- range $elm := .Services}}
 {{- if or (.QuorumCall) (.Future)}}
+{{- if .QuorumCall}}
 	// {{.MethodName}}QF is the quorum function for the {{.MethodName}}
 	// quorum call method.
+{{- end -}}
+
+{{- if .Future}}
+	// {{.MethodName}}QF is the quorum function for the {{.MethodName}}
+	// asynchronous quorum call method.
+{{- end -}}
+
 {{- if .QFWithReq}}
 	{{.MethodName}}QF(req *{{.FQReqName}}, replies []*{{.FQRespName}}) (*{{.FQCustomRespName}}, bool)
 {{else}}
@@ -845,16 +869,23 @@ type QuorumSpec interface {
 {{end}}
 {{end -}}
 
+{{- if or (.Correctable) (.CorrectablePrelim)}}
 {{if .Correctable}}
 	// {{.MethodName}}QF is the quorum function for the {{.MethodName}}
 	// correctable quorum call method.
-	{{.MethodName}}QF(replies []*{{.FQRespName}}) (*{{.FQRespName}}, int, bool)
-{{end -}}
+{{- end -}}
 
 {{if .CorrectablePrelim}}
-	// {{.MethodName}}CorrectablePrelimQF is the quorum function for the {{.MethodName}} 
+	// {{.MethodName}}QF is the quorum function for the {{.MethodName}} 
 	// correctable prelim quourm call method.
-	{{.MethodName}}QF(replies []*{{.FQRespName}}) (*{{.FQRespName}}, int, bool)
+{{- end -}}
+
+{{- if .QFWithReq}}
+	{{.MethodName}}QF(req *{{.FQReqName}}, replies []*{{.FQRespName}}) (*{{.FQCustomRespName}}, int, bool)
+{{else}}
+	{{.MethodName}}QF(replies []*{{.FQRespName}}) (*{{.FQCustomRespName}}, int, bool)
+{{end}}
+
 {{end -}}
 {{- end -}}
 }
