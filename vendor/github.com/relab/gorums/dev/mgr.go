@@ -255,6 +255,7 @@ func (m *Manager) NewConfiguration(ids []uint32, qspec QuorumSpec) (*Configurati
 		n:     len(cnodes),
 		mgr:   m,
 		qspec: qspec,
+		errs:  make(chan CallGRPCError, 128),
 	}
 	m.configs[cid] = c
 

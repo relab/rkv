@@ -120,7 +120,7 @@ type readPrelimReply struct {
 func (c *Configuration) readPrelim(ctx context.Context, a *ReadRequest, resp *ReadPrelimReply) {
 	replyChan := make(chan readPrelimReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadPrelim(ctx, n, a, replyChan)
+		go callGRPCReadPrelim(ctx, n, a, replyChan, c.errs)
 	}
 
 	var (
@@ -162,7 +162,7 @@ func (c *Configuration) readPrelim(ctx context.Context, a *ReadRequest, resp *Re
 	}
 }
 
-func callGRPCReadPrelim(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readPrelimReply) {
+func callGRPCReadPrelim(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readPrelimReply, _ chan<- CallGRPCError) {
 	x := NewRegisterClient(node.conn)
 	y, err := x.ReadPrelim(ctx, arg)
 	if err != nil {

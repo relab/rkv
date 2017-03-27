@@ -91,7 +91,7 @@ func (c *Configuration) readFuture(ctx context.Context, a *ReadRequest, resp *Re
 
 	replyChan := make(chan readFutureReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadFuture(ctx, n, a, replyChan)
+		go callGRPCReadFuture(ctx, n, a, replyChan, c.errs)
 	}
 
 	var (
@@ -129,7 +129,7 @@ func (c *Configuration) readFuture(ctx context.Context, a *ReadRequest, resp *Re
 	}
 }
 
-func callGRPCReadFuture(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readFutureReply) {
+func callGRPCReadFuture(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readFutureReply, errChan chan<- CallGRPCError) {
 	reply := new(State)
 	start := time.Now()
 	err := grpc.Invoke(
@@ -144,6 +144,13 @@ func callGRPCReadFuture(ctx context.Context, node *Node, arg *ReadRequest, reply
 		node.setLatency(time.Since(start))
 	default:
 		node.setLastErr(err)
+		select {
+		case errChan <- CallGRPCError{
+			NodeID: node.ID(),
+			Cause:  err,
+		}:
+		default:
+		}
 	}
 	replyChan <- readFutureReply{node.id, reply, err}
 }
@@ -226,7 +233,7 @@ func (c *Configuration) writeFuture(ctx context.Context, a *State, resp *WriteFu
 
 	replyChan := make(chan writeFutureReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCWriteFuture(ctx, n, a, replyChan)
+		go callGRPCWriteFuture(ctx, n, a, replyChan, c.errs)
 	}
 
 	var (
@@ -264,7 +271,7 @@ func (c *Configuration) writeFuture(ctx context.Context, a *State, resp *WriteFu
 	}
 }
 
-func callGRPCWriteFuture(ctx context.Context, node *Node, arg *State, replyChan chan<- writeFutureReply) {
+func callGRPCWriteFuture(ctx context.Context, node *Node, arg *State, replyChan chan<- writeFutureReply, errChan chan<- CallGRPCError) {
 	reply := new(WriteResponse)
 	start := time.Now()
 	err := grpc.Invoke(
@@ -279,6 +286,13 @@ func callGRPCWriteFuture(ctx context.Context, node *Node, arg *State, replyChan 
 		node.setLatency(time.Since(start))
 	default:
 		node.setLastErr(err)
+		select {
+		case errChan <- CallGRPCError{
+			NodeID: node.ID(),
+			Cause:  err,
+		}:
+		default:
+		}
 	}
 	replyChan <- writeFutureReply{node.id, reply, err}
 }

@@ -537,7 +537,7 @@ type readPrelimReply struct {
 func (c *Configuration) readPrelim(ctx context.Context, a *ReadRequest, resp *ReadPrelimReply) {
 	replyChan := make(chan readPrelimReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadPrelim(ctx, n, a, replyChan)
+		go callGRPCReadPrelim(ctx, n, a, replyChan, c.errs)
 	}
 
 	var (
@@ -579,7 +579,7 @@ func (c *Configuration) readPrelim(ctx context.Context, a *ReadRequest, resp *Re
 	}
 }
 
-func callGRPCReadPrelim(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readPrelimReply) {
+func callGRPCReadPrelim(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readPrelimReply, _ chan<- CallGRPCError) {
 	x := NewRegisterClient(node.conn)
 	y, err := x.ReadPrelim(ctx, arg)
 	if err != nil {
@@ -710,7 +710,7 @@ type readCorrectableReply struct {
 func (c *Configuration) readCorrectable(ctx context.Context, a *ReadRequest, resp *ReadCorrectableReply) {
 	replyChan := make(chan readCorrectableReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadCorrectable(ctx, n, a, replyChan)
+		go callGRPCReadCorrectable(ctx, n, a, replyChan, c.errs)
 	}
 
 	var (
@@ -752,7 +752,7 @@ func (c *Configuration) readCorrectable(ctx context.Context, a *ReadRequest, res
 	}
 }
 
-func callGRPCReadCorrectable(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readCorrectableReply) {
+func callGRPCReadCorrectable(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readCorrectableReply, errChan chan<- CallGRPCError) {
 	reply := new(State)
 	start := time.Now()
 	err := grpc.Invoke(
@@ -767,6 +767,13 @@ func callGRPCReadCorrectable(ctx context.Context, node *Node, arg *ReadRequest, 
 		node.setLatency(time.Since(start))
 	default:
 		node.setLastErr(err)
+		select {
+		case errChan <- CallGRPCError{
+			NodeID: node.ID(),
+			Cause:  err,
+		}:
+		default:
+		}
 	}
 	replyChan <- readCorrectableReply{node.id, reply, err}
 }
@@ -851,7 +858,7 @@ func (c *Configuration) readFuture(ctx context.Context, a *ReadRequest, resp *Re
 
 	replyChan := make(chan readFutureReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadFuture(ctx, n, a, replyChan)
+		go callGRPCReadFuture(ctx, n, a, replyChan, c.errs)
 	}
 
 	var (
@@ -889,7 +896,7 @@ func (c *Configuration) readFuture(ctx context.Context, a *ReadRequest, resp *Re
 	}
 }
 
-func callGRPCReadFuture(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readFutureReply) {
+func callGRPCReadFuture(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readFutureReply, errChan chan<- CallGRPCError) {
 	reply := new(State)
 	start := time.Now()
 	err := grpc.Invoke(
@@ -904,6 +911,13 @@ func callGRPCReadFuture(ctx context.Context, node *Node, arg *ReadRequest, reply
 		node.setLatency(time.Since(start))
 	default:
 		node.setLastErr(err)
+		select {
+		case errChan <- CallGRPCError{
+			NodeID: node.ID(),
+			Cause:  err,
+		}:
+		default:
+		}
 	}
 	replyChan <- readFutureReply{node.id, reply, err}
 }
@@ -986,7 +1000,7 @@ func (c *Configuration) writeFuture(ctx context.Context, a *State, resp *WriteFu
 
 	replyChan := make(chan writeFutureReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCWriteFuture(ctx, n, a, replyChan)
+		go callGRPCWriteFuture(ctx, n, a, replyChan, c.errs)
 	}
 
 	var (
@@ -1024,7 +1038,7 @@ func (c *Configuration) writeFuture(ctx context.Context, a *State, resp *WriteFu
 	}
 }
 
-func callGRPCWriteFuture(ctx context.Context, node *Node, arg *State, replyChan chan<- writeFutureReply) {
+func callGRPCWriteFuture(ctx context.Context, node *Node, arg *State, replyChan chan<- writeFutureReply, errChan chan<- CallGRPCError) {
 	reply := new(WriteResponse)
 	start := time.Now()
 	err := grpc.Invoke(
@@ -1039,6 +1053,13 @@ func callGRPCWriteFuture(ctx context.Context, node *Node, arg *State, replyChan 
 		node.setLatency(time.Since(start))
 	default:
 		node.setLastErr(err)
+		select {
+		case errChan <- CallGRPCError{
+			NodeID: node.ID(),
+			Cause:  err,
+		}:
+		default:
+		}
 	}
 	replyChan <- writeFutureReply{node.id, reply, err}
 }
@@ -1115,7 +1136,7 @@ func (c *Configuration) read(ctx context.Context, a *ReadRequest) (resp *State, 
 
 	replyChan := make(chan readReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCRead(ctx, n, a, replyChan)
+		go callGRPCRead(ctx, n, a, replyChan, c.errs)
 	}
 
 	var (
@@ -1148,7 +1169,7 @@ func (c *Configuration) read(ctx context.Context, a *ReadRequest) (resp *State, 
 	}
 }
 
-func callGRPCRead(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readReply) {
+func callGRPCRead(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readReply, errChan chan<- CallGRPCError) {
 	reply := new(State)
 	start := time.Now()
 	err := grpc.Invoke(
@@ -1163,6 +1184,13 @@ func callGRPCRead(ctx context.Context, node *Node, arg *ReadRequest, replyChan c
 		node.setLatency(time.Since(start))
 	default:
 		node.setLastErr(err)
+		select {
+		case errChan <- CallGRPCError{
+			NodeID: node.ID(),
+			Cause:  err,
+		}:
+		default:
+		}
 	}
 	replyChan <- readReply{node.id, reply, err}
 }
@@ -1209,7 +1237,7 @@ func (c *Configuration) readCustomReturn(ctx context.Context, a *ReadRequest) (r
 
 	replyChan := make(chan readCustomReturnReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadCustomReturn(ctx, n, a, replyChan)
+		go callGRPCReadCustomReturn(ctx, n, a, replyChan, c.errs)
 	}
 
 	var (
@@ -1242,7 +1270,7 @@ func (c *Configuration) readCustomReturn(ctx context.Context, a *ReadRequest) (r
 	}
 }
 
-func callGRPCReadCustomReturn(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readCustomReturnReply) {
+func callGRPCReadCustomReturn(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readCustomReturnReply, errChan chan<- CallGRPCError) {
 	reply := new(State)
 	start := time.Now()
 	err := grpc.Invoke(
@@ -1257,6 +1285,13 @@ func callGRPCReadCustomReturn(ctx context.Context, node *Node, arg *ReadRequest,
 		node.setLatency(time.Since(start))
 	default:
 		node.setLastErr(err)
+		select {
+		case errChan <- CallGRPCError{
+			NodeID: node.ID(),
+			Cause:  err,
+		}:
+		default:
+		}
 	}
 	replyChan <- readCustomReturnReply{node.id, reply, err}
 }
@@ -1303,7 +1338,7 @@ func (c *Configuration) write(ctx context.Context, a *State) (resp *WriteRespons
 
 	replyChan := make(chan writeReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCWrite(ctx, n, a, replyChan)
+		go callGRPCWrite(ctx, n, a, replyChan, c.errs)
 	}
 
 	var (
@@ -1336,7 +1371,7 @@ func (c *Configuration) write(ctx context.Context, a *State) (resp *WriteRespons
 	}
 }
 
-func callGRPCWrite(ctx context.Context, node *Node, arg *State, replyChan chan<- writeReply) {
+func callGRPCWrite(ctx context.Context, node *Node, arg *State, replyChan chan<- writeReply, errChan chan<- CallGRPCError) {
 	reply := new(WriteResponse)
 	start := time.Now()
 	err := grpc.Invoke(
@@ -1351,6 +1386,13 @@ func callGRPCWrite(ctx context.Context, node *Node, arg *State, replyChan chan<-
 		node.setLatency(time.Since(start))
 	default:
 		node.setLastErr(err)
+		select {
+		case errChan <- CallGRPCError{
+			NodeID: node.ID(),
+			Cause:  err,
+		}:
+		default:
+		}
 	}
 	replyChan <- writeReply{node.id, reply, err}
 }
@@ -1399,7 +1441,7 @@ func (c *Configuration) writePerNode(ctx context.Context, a *State, f func(arg S
 
 	replyChan := make(chan writePerNodeReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCWritePerNode(ctx, n, f(*a, n.id), replyChan)
+		go callGRPCWritePerNode(ctx, n, f(*a, n.id), replyChan, c.errs)
 	}
 
 	var (
@@ -1432,7 +1474,7 @@ func (c *Configuration) writePerNode(ctx context.Context, a *State, f func(arg S
 	}
 }
 
-func callGRPCWritePerNode(ctx context.Context, node *Node, arg *State, replyChan chan<- writePerNodeReply) {
+func callGRPCWritePerNode(ctx context.Context, node *Node, arg *State, replyChan chan<- writePerNodeReply, errChan chan<- CallGRPCError) {
 	reply := new(WriteResponse)
 	start := time.Now()
 	err := grpc.Invoke(
@@ -1447,6 +1489,13 @@ func callGRPCWritePerNode(ctx context.Context, node *Node, arg *State, replyChan
 		node.setLatency(time.Since(start))
 	default:
 		node.setLastErr(err)
+		select {
+		case errChan <- CallGRPCError{
+			NodeID: node.ID(),
+			Cause:  err,
+		}:
+		default:
+		}
 	}
 	replyChan <- writePerNodeReply{node.id, reply, err}
 }
@@ -1549,6 +1598,13 @@ type Configuration struct {
 	n     int
 	mgr   *Manager
 	qspec QuorumSpec
+	errs  chan CallGRPCError
+}
+
+// SubError returns a channel for listening to individual node errors. Currently
+// only a single listener is supported.
+func (c *Configuration) SubError() <-chan CallGRPCError {
+	return c.errs
 }
 
 // ID reports the identifier for the configuration.
@@ -1596,6 +1652,7 @@ func Equal(a, b *Configuration) bool { return a.id == b.id }
 func NewTestConfiguration(q, n int) *Configuration {
 	return &Configuration{
 		nodes: make([]*Node, n),
+		errs:  make(chan CallGRPCError, 128),
 	}
 }
 
@@ -1641,6 +1698,16 @@ func (e QuorumCallError) Error() string {
 		"quorum call error: %s (errors: %d, replies: %d)",
 		e.Reason, e.ErrCount, e.ReplyCount,
 	)
+}
+
+// CallGRPCError is used to report that a single gRPC call failed.
+type CallGRPCError struct {
+	NodeID uint32
+	Cause  error
+}
+
+func (e CallGRPCError) Error() string {
+	return e.Cause.Error()
 }
 
 /* level.go */
@@ -3394,7 +3461,7 @@ func init() { proto.RegisterFile("testdata/register_golden/register.proto", file
 
 var fileDescriptorRegister = []byte{
 	// 463 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x93, 0xb1, 0x6f, 0xd3, 0x40,
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x9c, 0x93, 0xb1, 0x6f, 0xd3, 0x40,
 	0x14, 0xc6, 0x7d, 0x24, 0xa1, 0xe9, 0x2b, 0x55, 0xa3, 0x13, 0x83, 0x15, 0xa1, 0x53, 0xb1, 0x90,
 	0x88, 0xaa, 0x2a, 0x29, 0x45, 0x08, 0x24, 0xa6, 0x52, 0x95, 0x8d, 0xa8, 0xb8, 0x08, 0x46, 0x74,
 	0x89, 0x9f, 0x82, 0x25, 0x3b, 0x17, 0xee, 0xde, 0x15, 0xb2, 0x75, 0x64, 0xec, 0x84, 0x18, 0x3b,

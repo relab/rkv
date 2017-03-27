@@ -7,7 +7,7 @@ const calltype_common_definitions_tmpl = `{{/* Remember to run 'make goldenandde
 {{/* calltype_common_definitions.tmpl will only be executed for each 'calltype' template. */}}
 
 {{define "callGRPC"}}
-func callGRPC{{.MethodName}}(ctx context.Context, node *Node, arg *{{.FQReqName}}, replyChan chan<- {{.UnexportedTypeName}}) {
+func callGRPC{{.MethodName}}(ctx context.Context, node *Node, arg *{{.FQReqName}}, replyChan chan<- {{.UnexportedTypeName}}, errChan chan<- CallGRPCError) {
 	reply := new({{.FQRespName}})
 	start := time.Now()
 	err := grpc.Invoke(
@@ -22,6 +22,13 @@ func callGRPC{{.MethodName}}(ctx context.Context, node *Node, arg *{{.FQReqName}
 		node.setLatency(time.Since(start))
 	default:
 		node.setLastErr(err)
+    select {
+    case errChan <- CallGRPCError{
+         NodeID: node.ID(),
+         Cause: err,
+    }:
+    default:
+    }
 	}
 	replyChan <- {{.UnexportedTypeName}}{node.id, reply, err}
 }
@@ -90,9 +97,9 @@ func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, a *{{.FQR
 	replyChan := make(chan {{.UnexportedTypeName}}, c.n)
 	for _, n := range c.nodes {
 {{- if .PerNodeArg}}
-		go callGRPC{{.MethodName}}(ctx, n, f(*a, n.id), replyChan)
+		go callGRPC{{.MethodName}}(ctx, n, f(*a, n.id), replyChan, c.errs)
 {{else}}
-		go callGRPC{{.MethodName}}(ctx, n, a, replyChan)
+		go callGRPC{{.MethodName}}(ctx, n, a, replyChan, c.errs)
 {{end -}}
 	}
 {{end}}
@@ -448,7 +455,7 @@ type {{.UnexportedTypeName}} struct {
 	}
 }
 
-func callGRPC{{.MethodName}}(ctx context.Context, node *Node, arg *{{.FQReqName}}, replyChan chan<- {{.UnexportedTypeName}}) {
+func callGRPC{{.MethodName}}(ctx context.Context, node *Node, arg *{{.FQReqName}}, replyChan chan<- {{.UnexportedTypeName}}, _ chan<- CallGRPCError) {
 	x := New{{.ServName}}Client(node.conn)
 	y, err := x.{{.MethodName}}(ctx, arg)
 	if err != nil {

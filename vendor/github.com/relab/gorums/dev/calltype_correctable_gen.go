@@ -122,7 +122,7 @@ type readCorrectableReply struct {
 func (c *Configuration) readCorrectable(ctx context.Context, a *ReadRequest, resp *ReadCorrectableReply) {
 	replyChan := make(chan readCorrectableReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadCorrectable(ctx, n, a, replyChan)
+		go callGRPCReadCorrectable(ctx, n, a, replyChan, c.errs)
 	}
 
 	var (
@@ -164,7 +164,7 @@ func (c *Configuration) readCorrectable(ctx context.Context, a *ReadRequest, res
 	}
 }
 
-func callGRPCReadCorrectable(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readCorrectableReply) {
+func callGRPCReadCorrectable(ctx context.Context, node *Node, arg *ReadRequest, replyChan chan<- readCorrectableReply, errChan chan<- CallGRPCError) {
 	reply := new(State)
 	start := time.Now()
 	err := grpc.Invoke(
@@ -179,6 +179,13 @@ func callGRPCReadCorrectable(ctx context.Context, node *Node, arg *ReadRequest, 
 		node.setLatency(time.Since(start))
 	default:
 		node.setLastErr(err)
+		select {
+		case errChan <- CallGRPCError{
+			NodeID: node.ID(),
+			Cause:  err,
+		}:
+		default:
+		}
 	}
 	replyChan <- readCorrectableReply{node.id, reply, err}
 }
