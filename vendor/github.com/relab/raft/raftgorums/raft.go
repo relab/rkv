@@ -101,6 +101,8 @@ type Raft struct {
 	aereqout chan *pb.AppendEntriesRequest
 	cureqout chan *catchUpReq
 
+	confChange chan *raft.ConfChangeFuture
+
 	logger logrus.FieldLogger
 
 	metricsEnabled bool
@@ -133,7 +135,7 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		sm:               sm,
 		storage:          storage,
 		batch:            cfg.Batch,
-		addrs:            cfg.Nodes,
+		addrs:            cfg.Servers,
 		nextIndex:        1,
 		electionTimeout:  cfg.ElectionTimeout,
 		heartbeatTimeout: cfg.HeartbeatTimeout,
@@ -145,6 +147,7 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		rvreqout:         make(chan *pb.RequestVoteRequest, 128),
 		aereqout:         make(chan *pb.AppendEntriesRequest, 128),
 		cureqout:         make(chan *catchUpReq, 16),
+		confChange:       make(chan *raft.ConfChangeFuture),
 		logger:           cfg.Logger,
 		metricsEnabled:   cfg.MetricsEnabled,
 	}
@@ -471,13 +474,35 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 }
 
 // ProposeConf implements raft.Raft.
-func (r *Raft) ProposeConf(ctx context.Context, conf raft.TODOConfChange) error {
-	panic("not implemented")
+func (r *Raft) ProposeConf(ctx context.Context, confChange *commonpb.ConfChangeRequest) (raft.Future, error) {
+	cmd, err := confChange.Marshal()
+
+	if err != nil {
+		return nil, err
+	}
+
+	future, err := r.cmdToFuture(cmd, commonpb.EntryConfChange)
+
+	if err != nil {
+		return nil, err
+	}
+
+	confFuture := &raft.ConfChangeFuture{
+		Req:         confChange,
+		EntryFuture: future,
+	}
+
+	select {
+	case r.confChange <- confFuture:
+		return confFuture, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // ProposeCmd implements raft.Raft.
 func (r *Raft) ProposeCmd(ctx context.Context, cmd []byte) (raft.Future, error) {
-	future, err := r.cmdToFuture(cmd)
+	future, err := r.cmdToFuture(cmd, commonpb.EntryNormal)
 
 	if err != nil {
 		return nil, err
@@ -496,7 +521,7 @@ func (r *Raft) ProposeCmd(ctx context.Context, cmd []byte) (raft.Future, error) 
 
 // ReadCmd implements raft.Raft.
 func (r *Raft) ReadCmd(ctx context.Context, cmd []byte) (raft.Future, error) {
-	future, err := r.cmdToFuture(cmd)
+	future, err := r.cmdToFuture(cmd, commonpb.EntryNormal)
 
 	if err != nil {
 		return nil, err
@@ -513,7 +538,7 @@ func (r *Raft) ReadCmd(ctx context.Context, cmd []byte) (raft.Future, error) {
 	return future, nil
 }
 
-func (r *Raft) cmdToFuture(cmd []byte) (*raft.EntryFuture, error) {
+func (r *Raft) cmdToFuture(cmd []byte, kind commonpb.EntryType) (*raft.EntryFuture, error) {
 	r.Lock()
 	state := r.state
 	leader := r.leader
@@ -525,7 +550,7 @@ func (r *Raft) cmdToFuture(cmd []byte) (*raft.EntryFuture, error) {
 	}
 
 	entry := &commonpb.Entry{
-		EntryType: commonpb.EntryNormal,
+		EntryType: kind,
 		Term:      term,
 		Data:      cmd,
 	}

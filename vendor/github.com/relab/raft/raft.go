@@ -3,6 +3,8 @@ package raft
 import (
 	"fmt"
 
+	"github.com/relab/raft/commonpb"
+
 	"golang.org/x/net/context"
 )
 
@@ -34,10 +36,6 @@ type Raft interface {
 	// entries to the log.
 	ReadCmd(context.Context, []byte) (Future, error)
 
-	// ProposeConf proposes a new configuration. Blocks until Raft handles
-	// the message or the context is canceled, i.e., server is busy.
-	// Immediately returns an ErrNotLeader error if server isn't the leader.
-	ProposeConf(context.Context, TODOConfChange) error
+	// ProposeConf proposes a new configuration. Behaves as ProposeCmd.
+	ProposeConf(context.Context, *commonpb.ConfChangeRequest) (Future, error)
 }
-
-type TODOConfChange struct{}

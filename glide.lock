@@ -1,5 +1,5 @@
 hash: 3e55cdac972dba43a38959f67882096a73d4ef78e8e8d183e2ac09fc63d16756
-updated: 2017-03-27T18:35:24.49656375+02:00
+updated: 2017-04-05T12:48:32.085238177+02:00
 imports:
 - name: github.com/beorn7/perks
   version: 4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9
@@ -20,7 +20,7 @@ imports:
   - proto
   - protoc-gen-gogo/descriptor
 - name: github.com/golang/protobuf
-  version: c9c7427a2a70d2eb3bafa0ab2dc163e45f143317
+  version: 2bba0603135d7d7f5cb73b2125beeda19c09f4ef
   subpackages:
   - proto
 - name: github.com/hashicorp/go-immutable-radix
@@ -55,7 +55,7 @@ imports:
 - name: github.com/relab/gorums
   version: 778c334f48ea1bc4775aae133b05a09bd740b8a2
 - name: github.com/relab/raft
-  version: c1af5ecf37f2dedca58bfe96d1780069e268488c
+  version: 8c963a06006c7452d64d239a182e80173a455c8c
   subpackages:
   - commonpb
   - raftgorums
@@ -64,7 +64,7 @@ imports:
 - name: github.com/Sirupsen/logrus
   version: ba1b36c82c5e05c4f912a88eab0dcd91a171688f
 - name: golang.org/x/net
-  version: 6c23252515492caf9b228a9d5cabcdbde29f7f82
+  version: ffcf1bedda3b04ebb15a168a59800a73d6dc0f4d
   subpackages:
   - context
   - http2
@@ -74,11 +74,11 @@ imports:
   - lex/httplex
   - trace
 - name: golang.org/x/sys
-  version: afadfcc7779c1f4db0f6f6438afcb108d9c9c7cd
+  version: 493114f68206f85e7e333beccfabc11e98cba8dd
   subpackages:
   - unix
 - name: golang.org/x/text
-  version: fc7fa097411d30e6708badff276c4c164425590c
+  version: f4b4367115ec2de254587813edaa901bc1c723a8
   subpackages:
   - secure/bidirule
   - transform
