@@ -126,7 +126,7 @@ func main() {
 
 	grpcServer := grpc.NewServer()
 
-	node := raftgorums.NewNode(grpcServer, NewStore(), &raftgorums.Config{
+	raft := raftgorums.NewRaft(NewStore(), &raftgorums.Config{
 		ID:               *id,
 		Servers:          nodes,
 		InitialCluster:   ids,
@@ -139,7 +139,7 @@ func main() {
 		MetricsEnabled:   true,
 	})
 
-	service := NewService(node.Raft)
+	service := NewService(raft)
 	rkvpb.RegisterRKVServer(grpcServer, service)
 
 	go func() {
@@ -151,5 +151,5 @@ func main() {
 		logrus.Fatal(http.ListenAndServe(":5"+nodes[*id-1][1:], nil))
 	}()
 
-	logrus.Fatal(node.Run())
+	logrus.Fatal(raft.Run(grpcServer))
 }
