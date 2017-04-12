@@ -64,6 +64,8 @@ type Raft struct {
 
 	state State
 
+	mem *membership
+
 	addrs []string
 
 	lookup  map[uint64]int
@@ -100,9 +102,6 @@ type Raft struct {
 	rvreqout chan *pb.RequestVoteRequest
 	aereqout chan *pb.AppendEntriesRequest
 	cureqout chan *catchUpReq
-
-	mem        *membership
-	confChange chan *gorums.Configuration
 
 	logger logrus.FieldLogger
 
@@ -150,7 +149,6 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		rvreqout:         make(chan *pb.RequestVoteRequest, 128),
 		aereqout:         make(chan *pb.AppendEntriesRequest, 128),
 		cureqout:         make(chan *catchUpReq, 16),
-		confChange:       make(chan *gorums.Configuration),
 		logger:           cfg.Logger,
 		metricsEnabled:   cfg.MetricsEnabled,
 	}
