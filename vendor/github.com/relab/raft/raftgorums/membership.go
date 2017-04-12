@@ -86,20 +86,24 @@ func (r *Raft) replicate(serverID uint64, future *raft.EntryFuture) {
 
 	for {
 		r.Lock()
-		if r.matchIndex-matchIndex < r.maxAppendEntries {
+		target := r.matchIndex
+		maxEntries := r.maxAppendEntries
+		r.Unlock()
+
+		if target-matchIndex < maxEntries {
 			// TODO r.addServer(serverID) -> send request on queue,
 			// modify aereqout to contain new configuration.
 			return
 		}
 
-		entries := r.getNextEntries(matchIndex)
-		ctx, cancel := context.WithTimeout(context.Background(), r.electionTimeout)
-		res, err := node.RaftClient.AppendEntries(
-			ctx,
-			r.getAppendEntriesRequest(matchIndex+1, entries),
-		)
-		cancel()
+		r.Lock()
+		entries := r.getNextEntries(matchIndex + 1)
+		req := r.getAppendEntriesRequest(matchIndex+1, entries)
 		r.Unlock()
+
+		ctx, cancel := context.WithTimeout(context.Background(), r.electionTimeout)
+		res, err := node.RaftClient.AppendEntries(ctx, req)
+		cancel()
 
 		// TODO handle better.
 		if err != nil {

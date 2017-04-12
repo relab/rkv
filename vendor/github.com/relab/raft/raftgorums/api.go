@@ -8,8 +8,8 @@ import (
 )
 
 // ProposeConf implements raft.Raft.
-func (r *Raft) ProposeConf(ctx context.Context, confChange *commonpb.ConfChangeRequest) (raft.Future, error) {
-	cmd, err := confChange.Marshal()
+func (r *Raft) ProposeConf(ctx context.Context, req *commonpb.ReconfRequest) (raft.Future, error) {
+	cmd, err := req.Marshal()
 
 	if err != nil {
 		return nil, err
@@ -17,23 +17,19 @@ func (r *Raft) ProposeConf(ctx context.Context, confChange *commonpb.ConfChangeR
 
 	future, err := r.cmdToFuture(cmd, commonpb.EntryConfChange)
 
+	// TODO Fix error returned here, NotLeader should be a status code.
 	if err != nil {
-		err := err.(raft.ErrNotLeader)
-		future.Respond(&commonpb.ConfChangeResponse{
-			Status:     commonpb.ConfNotLeader,
-			LeaderHint: r.addrs[err.Leader-1],
-		})
-		return future, nil
+		return nil, err
 	}
 
 	if !r.allowReconfiguration() {
-		future.Respond(&commonpb.ConfChangeResponse{
-			Status: commonpb.ConfTimeout,
+		future.Respond(&commonpb.ReconfResponse{
+			Status: commonpb.ReconfTimeout,
 		})
 		return future, nil
 	}
 
-	go r.replicate(confChange.ServerID, future)
+	go r.replicate(req.ServerID, future)
 
 	return future, nil
 }
