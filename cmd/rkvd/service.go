@@ -4,6 +4,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/relab/raft"
+	"github.com/relab/raft/commonpb"
 	"github.com/relab/rkv/rkvpb"
 )
 
@@ -106,6 +107,22 @@ func (s *Service) Lookup(ctx context.Context, req *rkvpb.LookupRequest) (*rkvpb.
 	select {
 	case res := <-future.Result():
 		return &rkvpb.LookupResponse{Value: res.(string)}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// Reconf implements RKVServer.
+func (s *Service) Reconf(ctx context.Context, req *commonpb.ReconfRequest) (*commonpb.ReconfResponse, error) {
+	future, err := s.raft.ProposeConf(ctx, req)
+
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case res := <-future.Result():
+		return res.(*commonpb.ReconfResponse), nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

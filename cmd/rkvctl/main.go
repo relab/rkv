@@ -19,6 +19,9 @@ func main() {
 		cluster = flag.String("cluster", ":9201,:9202,:9203", "comma separated cluster servers")
 		clients = flag.Int("clients", 5, "number of clients")
 
+		add    = flag.Uint64("add", 0, "server to attempt to add to cluster")
+		remove = flag.Uint64("remove", 0, "server to attempt to remove from cluster")
+
 		reads      = flag.Float64("reads", 0, "percentage of requests which should be reads")
 		throughput = flag.Int("throughput", 10, "requests per second per client")
 
@@ -27,6 +30,10 @@ func main() {
 		zipfv    = flag.Float64("zipfv", 4, "zipf v parameter")
 	)
 	flag.Parse()
+
+	if *add > 0 && *remove > 0 {
+		panic("can only do one reconfiguration at the time")
+	}
 
 	var leader uint64
 	servers := strings.Split(*cluster, ",")
@@ -40,11 +47,32 @@ func main() {
 			logrus.WithError(err).Panicln("Failed to create client")
 		}
 
-		go runClient(c, *throughput, *reads)
+		switch {
+		case *add > 0:
+			addServer(c, *add)
+			return
+		case *remove > 0:
+			removeServer(c, *remove)
+			return
+		default:
+			go runClient(c, *throughput, *reads)
+		}
 	}
 
 	http.Handle("/metrics", promhttp.Handler())
 	logrus.Fatal(http.ListenAndServe(":59100", nil))
+}
+
+func addServer(c *client, serverID uint64) {
+	res, err := c.addServer(serverID)
+
+	logrus.WithError(err).WithField("res", res).Warnln("Tried to add server")
+}
+
+func removeServer(c *client, serverID uint64) {
+	res, err := c.removeServer(serverID)
+
+	logrus.WithError(err).WithField("res", res).Warnln("Tried to remove server")
 }
 
 func runClient(c *client, throughput int, reads float64) {

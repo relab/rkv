@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/metrics"
+	"github.com/relab/raft/commonpb"
 	"github.com/relab/rkv/rkvpb"
 	"google.golang.org/grpc"
 )
@@ -73,6 +74,42 @@ var ErrMaxInFlightReached = errors.New("reached max in-flight")
 func sleep(round int) {
 	dur := sleepPerRound * time.Duration(round)
 	time.Sleep(dur)
+}
+
+func (c *client) addServer(serverID uint64) (*commonpb.ReconfResponse, error) {
+	return c.reconf(serverID, commonpb.ReconfAdd)
+}
+
+func (c *client) removeServer(serverID uint64) (*commonpb.ReconfResponse, error) {
+	return c.reconf(serverID, commonpb.ReconfRemove)
+}
+
+func (c *client) reconf(serverID uint64, reconfType commonpb.ReconfType) (*commonpb.ReconfResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+
+	var res *commonpb.ReconfResponse
+	var err error
+
+	for i := 0; i < retryPerServer*len(c.servers); i++ {
+		if i%len(c.servers) == 0 {
+			sleep(i / len(c.servers))
+		}
+
+		res, err = c.leader().Reconf(ctx, &commonpb.ReconfRequest{
+			ServerID:   serverID,
+			ReconfType: reconfType,
+		})
+
+		if err != nil {
+			c.nextLeader()
+			continue
+		}
+
+		break
+	}
+
+	return res, err
 }
 
 func (c *client) register() (*rkvpb.RegisterResponse, error) {

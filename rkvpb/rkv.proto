@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "github.com/relab/raft/commonpb/raft.proto";
 
 package rkvpb;
 
@@ -11,6 +12,7 @@ service RKV {
   rpc Register(RegisterRequest) returns (RegisterResponse);
   rpc Insert(InsertRequest) returns (InsertResponse);
   rpc Lookup(LookupRequest) returns (LookupResponse);
+  rpc Reconf(commonpb.ReconfRequest) returns (commonpb.ReconfResponse);
 }
 
 enum CmdType {
