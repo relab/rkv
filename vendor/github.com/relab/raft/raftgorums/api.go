@@ -22,14 +22,19 @@ func (r *Raft) ProposeConf(ctx context.Context, req *commonpb.ReconfRequest) (ra
 		return nil, err
 	}
 
-	if !r.allowReconfiguration() {
+	if !r.mem.startReconfiguration(req) {
 		future.Respond(&commonpb.ReconfResponse{
 			Status: commonpb.ReconfTimeout,
 		})
 		return future, nil
 	}
 
-	go r.replicate(req.ServerID, future)
+	switch req.ReconfType {
+	case commonpb.ReconfAdd:
+		go r.replicate(req.ServerID, future)
+	case commonpb.ReconfRemove:
+		r.queue <- future
+	}
 
 	return future, nil
 }

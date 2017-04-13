@@ -103,6 +103,8 @@ type Raft struct {
 	aereqout chan *pb.AppendEntriesRequest
 	cureqout chan *catchUpReq
 
+	toggle chan struct{}
+
 	logger logrus.FieldLogger
 
 	metricsEnabled bool
@@ -113,6 +115,7 @@ type catchUpReq struct {
 	matchIndex uint64
 }
 
+// TODO Just use future.
 type entryFuture struct {
 	entry  *commonpb.Entry
 	future *raft.EntryFuture
@@ -149,6 +152,7 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		rvreqout:         make(chan *pb.RequestVoteRequest, 128),
 		aereqout:         make(chan *pb.AppendEntriesRequest, 128),
 		cureqout:         make(chan *catchUpReq, 16),
+		toggle:           make(chan struct{}, 1),
 		logger:           cfg.Logger,
 		metricsEnabled:   cfg.MetricsEnabled,
 	}
@@ -177,8 +181,10 @@ func (r *Raft) Run(server *grpc.Server) error {
 	}
 
 	mem := &membership{
+		id:     r.id,
 		mgr:    mgr,
 		lookup: lookup,
+		logger: r.logger,
 	}
 
 	gorums.RegisterRaftServer(server, r)
@@ -189,6 +195,7 @@ func (r *Raft) Run(server *grpc.Server) error {
 		if r.id == id {
 			// Exclude self.
 			r.state = Follower
+			mem.enabled = true
 			continue
 		}
 		r.logger.WithField("serverid", id).Warnln("Added to cluster")
@@ -243,6 +250,16 @@ func (r *Raft) run() {
 		default:
 			r.runNormal()
 		}
+
+		if r.mem.isActive() {
+			r.logger.Warnln("Dormant -> Normal")
+			r.state = Follower
+		} else {
+			r.logger.Warnln("Normal -> Dormant")
+			r.state = Inactive
+		}
+
+		r.becomeFollower(r.currentTerm)
 	}
 }
 
@@ -269,6 +286,8 @@ func (r *Raft) runDormant() {
 		case <-baselineTimeout:
 			baselineTimeout = time.After(r.electionTimeout)
 			baseline()
+		case <-r.toggle:
+			return
 		}
 	}
 }
@@ -349,6 +368,8 @@ func (r *Raft) runNormal() {
 				continue
 			}
 			r.sendAppendEntries()
+		case <-r.toggle:
+			return
 		}
 	}
 }
@@ -384,6 +405,7 @@ func (r *Raft) advanceCommitIndex() {
 	old := r.commitIndex
 
 	if r.logTerm(r.matchIndex) == r.currentTerm {
+		r.mem.setStable(true)
 		r.commitIndex = max(r.commitIndex, r.matchIndex)
 	}
 
@@ -428,13 +450,18 @@ func (r *Raft) newCommit(old uint64) {
 			e := r.pending.Front()
 			if e != nil {
 				future := e.Value.(*raft.EntryFuture)
-				r.applyCh <- &entryFuture{future.Entry, future}
-				r.pending.Remove(e)
-				break
+				if future.Entry.Index == i {
+					r.applyCh <- &entryFuture{future.Entry, future}
+					r.pending.Remove(e)
+					break
+				}
 			}
 			fallthrough
 		default:
 			committed := r.storage.GetEntry(i)
+			if committed.Index != i {
+				panic("entry tried applied out of order")
+			}
 			r.applyCh <- &entryFuture{committed, nil}
 		}
 	}
@@ -443,8 +470,39 @@ func (r *Raft) newCommit(old uint64) {
 func (r *Raft) runStateMachine() {
 	apply := func(commit *entryFuture) {
 		var res interface{}
-		if commit.entry.EntryType != commonpb.EntryInternal {
+
+		switch commit.entry.EntryType {
+		case commonpb.EntryInternal:
+		case commonpb.EntryNormal:
 			res = r.sm.Apply(commit.entry)
+		case commonpb.EntryConfChange:
+			// TODO We should be able to skip the unmarshaling if we
+			// are not recovering.
+			var reconf commonpb.ReconfRequest
+			err := reconf.Unmarshal(commit.entry.Data)
+
+			if err != nil {
+				panic("could not unmarshal reconf")
+			}
+
+			r.mem.setPending(&reconf)
+			r.mem.set(commit.entry.Index)
+			// TODO Send to state machine.
+			r.logger.Warnln("Comitted configuration")
+
+			enabled := r.mem.commit()
+
+			// Toggle if we need to change run routine.
+			if (enabled && r.state == Inactive) || !enabled {
+				select {
+				case r.toggle <- struct{}{}:
+				default:
+				}
+			}
+
+			res = &commonpb.ReconfResponse{
+				Status: commonpb.ReconfOK,
+			}
 		}
 
 		if commit.future != nil {
@@ -507,11 +565,20 @@ func (r *Raft) sendAppendEntries() {
 	var toSave []*commonpb.Entry
 	assignIndex := r.storage.NextIndex()
 
+	// TODO This means the first entry in the log cannot be a configuration
+	// change. This should not pose a problem as we always commit a no-op
+	// first. This needs to be dealt with if we decide to store the initial
+	// configuration at the first index however.
+	var reconf uint64
+
 LOOP:
 	for i := r.maxAppendEntries; i > 0; i-- {
 		select {
 		case future := <-r.queue:
 			future.Entry.Index = assignIndex
+			if future.Entry.EntryType == commonpb.EntryConfChange {
+				reconf = assignIndex
+			}
 			assignIndex++
 			toSave = append(toSave, future.Entry)
 			r.pending.PushBack(future)
@@ -522,6 +589,10 @@ LOOP:
 
 	if len(toSave) > 0 {
 		r.storage.StoreEntries(toSave)
+	}
+
+	if reconf > 0 {
+		r.mem.set(reconf)
 	}
 
 	r.aereqout <- r.getAppendEntriesRequest(r.nextIndex, nil)
@@ -566,7 +637,9 @@ func (r *Raft) getAppendEntriesRequest(nextIndex uint64, entries []*commonpb.Ent
 // TODO Tests.
 // TODO Assumes caller already holds lock on Raft.
 func (r *Raft) becomeFollower(term uint64) {
-	r.state = Follower
+	if r.state != Inactive {
+		r.state = Follower
+	}
 	r.preElection = true
 
 	if r.currentTerm != term {
