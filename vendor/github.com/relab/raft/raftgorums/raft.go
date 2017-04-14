@@ -14,9 +14,6 @@ import (
 	pb "github.com/relab/raft/raftgorums/raftpb"
 )
 
-// LogLevel sets the level of logging.
-const LogLevel = logrus.InfoLevel
-
 // State represents one of the Raft server states.
 type State int
 
@@ -57,7 +54,7 @@ type Raft struct {
 
 	sm raft.StateMachine
 
-	storage *PanicStorage
+	storage *raft.PanicStorage
 
 	seenLeader      bool
 	heardFromLeader bool
@@ -125,10 +122,10 @@ type entryFuture struct {
 func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 	// TODO Validate config, i.e., make sure to sensible defaults if an
 	// option is not configured.
-	storage := &PanicStorage{NewCacheStorage(cfg.Storage, 20000), cfg.Logger}
+	storage := raft.NewPanicStorage(cfg.Storage, cfg.Logger)
 
-	term := storage.Get(KeyTerm)
-	votedFor := storage.Get(KeyVotedFor)
+	term := storage.Get(raft.KeyTerm)
+	votedFor := storage.Get(raft.KeyVotedFor)
 
 	// TODO Order.
 	r := &Raft{
@@ -530,11 +527,11 @@ func (r *Raft) startElection() {
 		// We are now a candidate. See Raft Paper Figure 2 -> Rules for Servers -> Candidates.
 		// #C1 Increment currentTerm.
 		r.currentTerm++
-		r.storage.Set(KeyTerm, r.currentTerm)
+		r.storage.Set(raft.KeyTerm, r.currentTerm)
 
 		// #C2 Vote for self.
 		r.votedFor = r.id
-		r.storage.Set(KeyVotedFor, r.id)
+		r.storage.Set(raft.KeyVotedFor, r.id)
 	}
 
 	r.logger.WithFields(logrus.Fields{
@@ -651,8 +648,8 @@ func (r *Raft) becomeFollower(term uint64) {
 		r.currentTerm = term
 		r.votedFor = None
 
-		r.storage.Set(KeyTerm, term)
-		r.storage.Set(KeyVotedFor, None)
+		r.storage.Set(raft.KeyTerm, term)
+		r.storage.Set(raft.KeyVotedFor, None)
 	}
 
 	// Reset election and baseline timeouts.

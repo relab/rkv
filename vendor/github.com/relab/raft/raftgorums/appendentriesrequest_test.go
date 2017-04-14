@@ -10,6 +10,7 @@ import (
 	"github.com/relab/raft/commonpb"
 	"github.com/relab/raft/raftgorums"
 	pb "github.com/relab/raft/raftgorums/raftpb"
+	"github.com/relab/raft"
 )
 
 func noop(index uint64, term uint64) *commonpb.Entry {
@@ -35,28 +36,28 @@ func logPlusEntry(l map[uint64]*commonpb.Entry, entry *commonpb.Entry) map[uint6
 
 var handleAppendEntriesRequestTests = []struct {
 	name   string
-	s      raftgorums.Storage
+	s      raft.Storage
 	req    []*pb.AppendEntriesRequest
 	res    []*pb.AppendEntriesResponse
-	states []*raftgorums.Memory
+	states []*raft.Memory
 }{
 	{
 		"reject lower term",
 		newMemory(5, nil),
-		[]*pb.AppendEntriesRequest{&pb.AppendEntriesRequest{LeaderID: 1, Term: 1}},
-		[]*pb.AppendEntriesResponse{&pb.AppendEntriesResponse{Term: 5}},
-		[]*raftgorums.Memory{
-			raftgorums.NewMemory(map[uint64]uint64{
-				raftgorums.KeyTerm:      5,
-				raftgorums.KeyVotedFor:  raftgorums.None,
-				raftgorums.KeyNextIndex: 1,
+		[]*pb.AppendEntriesRequest{{LeaderID: 1, Term: 1}},
+		[]*pb.AppendEntriesResponse{{Term: 5}},
+		[]*raft.Memory{
+			raft.NewMemory(map[uint64]uint64{
+				raft.KeyTerm:      5,
+				raft.KeyVotedFor:  raftgorums.None,
+				raft.KeyNextIndex: 1,
 			}, nil),
 		},
 	},
 	{
 		"successfully append entry",
 		newMemory(5, log2()),
-		[]*pb.AppendEntriesRequest{&pb.AppendEntriesRequest{
+		[]*pb.AppendEntriesRequest{{
 			LeaderID:     1,
 			Term:         5,
 			PrevLogIndex: 2,
@@ -65,19 +66,19 @@ var handleAppendEntriesRequestTests = []struct {
 				noop(3, 5),
 			},
 		}},
-		[]*pb.AppendEntriesResponse{&pb.AppendEntriesResponse{Term: 5, MatchIndex: 3, Success: true}},
-		[]*raftgorums.Memory{
-			raftgorums.NewMemory(map[uint64]uint64{
-				raftgorums.KeyTerm:      5,
-				raftgorums.KeyVotedFor:  raftgorums.None,
-				raftgorums.KeyNextIndex: 4,
+		[]*pb.AppendEntriesResponse{{Term: 5, MatchIndex: 3, Success: true}},
+		[]*raft.Memory{
+			raft.NewMemory(map[uint64]uint64{
+				raft.KeyTerm:      5,
+				raft.KeyVotedFor:  raftgorums.None,
+				raft.KeyNextIndex: 4,
 			}, logPlusEntry(log2(), noop(3, 5))),
 		},
 	},
 	{
 		"successfully overwrite entry",
 		newMemory(5, logPlusEntry(log2(), noop(3, 5))),
-		[]*pb.AppendEntriesRequest{&pb.AppendEntriesRequest{
+		[]*pb.AppendEntriesRequest{{
 			LeaderID:     1,
 			Term:         6,
 			PrevLogIndex: 2,
@@ -86,19 +87,19 @@ var handleAppendEntriesRequestTests = []struct {
 				noop(3, 6),
 			},
 		}},
-		[]*pb.AppendEntriesResponse{&pb.AppendEntriesResponse{Term: 6, MatchIndex: 3, Success: true}},
-		[]*raftgorums.Memory{
-			raftgorums.NewMemory(map[uint64]uint64{
-				raftgorums.KeyTerm:      6,
-				raftgorums.KeyVotedFor:  raftgorums.None,
-				raftgorums.KeyNextIndex: 4,
+		[]*pb.AppendEntriesResponse{{Term: 6, MatchIndex: 3, Success: true}},
+		[]*raft.Memory{
+			raft.NewMemory(map[uint64]uint64{
+				raft.KeyTerm:      6,
+				raft.KeyVotedFor:  raftgorums.None,
+				raft.KeyNextIndex: 4,
 			}, logPlusEntry(log2(), noop(3, 6))),
 		},
 	},
 	{
 		"successfully overwrite entries",
 		newMemory(5, logPlusEntry(logPlusEntry(log2(), noop(3, 5)), noop(4, 5))),
-		[]*pb.AppendEntriesRequest{&pb.AppendEntriesRequest{
+		[]*pb.AppendEntriesRequest{{
 			LeaderID:     1,
 			Term:         6,
 			PrevLogIndex: 2,
@@ -107,12 +108,12 @@ var handleAppendEntriesRequestTests = []struct {
 				noop(3, 6), noop(4, 6),
 			},
 		}},
-		[]*pb.AppendEntriesResponse{&pb.AppendEntriesResponse{Term: 6, MatchIndex: 4, Success: true}},
-		[]*raftgorums.Memory{
-			raftgorums.NewMemory(map[uint64]uint64{
-				raftgorums.KeyTerm:      6,
-				raftgorums.KeyVotedFor:  raftgorums.None,
-				raftgorums.KeyNextIndex: 5,
+		[]*pb.AppendEntriesResponse{{Term: 6, MatchIndex: 4, Success: true}},
+		[]*raft.Memory{
+			raft.NewMemory(map[uint64]uint64{
+				raft.KeyTerm:      6,
+				raft.KeyVotedFor:  raftgorums.None,
+				raft.KeyNextIndex: 5,
 			}, logPlusEntry(logPlusEntry(log2(), noop(3, 6)), noop(4, 6))),
 		},
 	},
@@ -120,7 +121,7 @@ var handleAppendEntriesRequestTests = []struct {
 		"successful on already committed but ignore entries",
 		newMemory(5, log2()),
 		[]*pb.AppendEntriesRequest{
-			&pb.AppendEntriesRequest{
+			{
 				LeaderID:     1,
 				Term:         5,
 				PrevLogIndex: 2,
@@ -130,7 +131,7 @@ var handleAppendEntriesRequestTests = []struct {
 					noop(3, 5),
 				},
 			},
-			&pb.AppendEntriesRequest{
+			{
 				LeaderID:     1,
 				Term:         5,
 				PrevLogIndex: 3,
@@ -140,7 +141,7 @@ var handleAppendEntriesRequestTests = []struct {
 					noop(4, 5),
 				},
 			},
-			&pb.AppendEntriesRequest{
+			{
 				LeaderID:     1,
 				Term:         5,
 				PrevLogIndex: 2,
@@ -152,25 +153,25 @@ var handleAppendEntriesRequestTests = []struct {
 			},
 		},
 		[]*pb.AppendEntriesResponse{
-			&pb.AppendEntriesResponse{Term: 5, MatchIndex: 3, Success: true},
-			&pb.AppendEntriesResponse{Term: 5, MatchIndex: 4, Success: true},
-			&pb.AppendEntriesResponse{Term: 5, MatchIndex: 4, Success: true},
+			{Term: 5, MatchIndex: 3, Success: true},
+			{Term: 5, MatchIndex: 4, Success: true},
+			{Term: 5, MatchIndex: 4, Success: true},
 		},
-		[]*raftgorums.Memory{
-			raftgorums.NewMemory(map[uint64]uint64{
-				raftgorums.KeyTerm:      5,
-				raftgorums.KeyVotedFor:  raftgorums.None,
-				raftgorums.KeyNextIndex: 4,
+		[]*raft.Memory{
+			raft.NewMemory(map[uint64]uint64{
+				raft.KeyTerm:      5,
+				raft.KeyVotedFor:  raftgorums.None,
+				raft.KeyNextIndex: 4,
 			}, logPlusEntry(log2(), noop(3, 5))),
-			raftgorums.NewMemory(map[uint64]uint64{
-				raftgorums.KeyTerm:      5,
-				raftgorums.KeyVotedFor:  raftgorums.None,
-				raftgorums.KeyNextIndex: 5,
+			raft.NewMemory(map[uint64]uint64{
+				raft.KeyTerm:      5,
+				raft.KeyVotedFor:  raftgorums.None,
+				raft.KeyNextIndex: 5,
 			}, logPlusEntry(logPlusEntry(log2(), noop(3, 5)), noop(4, 5))),
-			raftgorums.NewMemory(map[uint64]uint64{
-				raftgorums.KeyTerm:      5,
-				raftgorums.KeyVotedFor:  raftgorums.None,
-				raftgorums.KeyNextIndex: 5,
+			raft.NewMemory(map[uint64]uint64{
+				raft.KeyTerm:      5,
+				raft.KeyVotedFor:  raftgorums.None,
+				raft.KeyNextIndex: 5,
 			}, logPlusEntry(logPlusEntry(log2(), noop(3, 5)), noop(4, 5))),
 		},
 	},
