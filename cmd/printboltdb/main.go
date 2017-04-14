@@ -6,8 +6,8 @@ import (
 	"log"
 	"os"
 
+	"github.com/relab/raft"
 	"github.com/relab/raft/commonpb"
-	"github.com/relab/raft/raftgorums"
 )
 
 func main() {
@@ -20,7 +20,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	storage, err := raftgorums.NewFileStorage(*path, false)
+	storage, err := raft.NewFileStorage(*path, false)
 
 	if err != nil {
 		log.Fatal(err)

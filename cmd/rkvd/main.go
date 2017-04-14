@@ -16,6 +16,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/relab/raft"
 	"github.com/relab/raft/raftgorums"
 	"github.com/relab/rkv/rkvpb"
 
@@ -112,7 +113,8 @@ func main() {
 
 	grpclog.SetLogger(logger)
 
-	storage, err := raftgorums.NewFileStorage(fmt.Sprintf("db%.2d.bolt", *id), !*recover)
+	storage, err := raft.NewFileStorage(fmt.Sprintf("db%.2d.bolt", *id), !*recover)
+	storageWithCache := raft.NewCacheStorage(storage, 20000)
 
 	if err != nil {
 		logrus.Fatal(err)
@@ -131,7 +133,7 @@ func main() {
 		Servers:          nodes,
 		InitialCluster:   ids,
 		Batch:            *batch,
-		Storage:          storage,
+		Storage:          storageWithCache,
 		ElectionTimeout:  *electionTimeout,
 		HeartbeatTimeout: *heartbeatTimeout,
 		MaxAppendEntries: *maxAppendEntries,
