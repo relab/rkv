@@ -39,8 +39,8 @@ func (s *Service) Register(ctx context.Context, req *rkvpb.RegisterRequest) (*rk
 	}
 
 	select {
-	case res := <-future.Result():
-		return &rkvpb.RegisterResponse{ClientID: res.(uint64)}, nil
+	case res := <-future.ResultCh():
+		return &rkvpb.RegisterResponse{ClientID: res.Value.(uint64)}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -72,7 +72,7 @@ func (s *Service) Insert(ctx context.Context, req *rkvpb.InsertRequest) (*rkvpb.
 	}
 
 	select {
-	case <-future.Result():
+	case <-future.ResultCh():
 		return &rkvpb.InsertResponse{Ok: true}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -105,8 +105,8 @@ func (s *Service) Lookup(ctx context.Context, req *rkvpb.LookupRequest) (*rkvpb.
 	}
 
 	select {
-	case res := <-future.Result():
-		return &rkvpb.LookupResponse{Value: res.(string)}, nil
+	case res := <-future.ResultCh():
+		return &rkvpb.LookupResponse{Value: res.Value.(string)}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -121,8 +121,8 @@ func (s *Service) Reconf(ctx context.Context, req *commonpb.ReconfRequest) (*com
 	}
 
 	select {
-	case res := <-future.Result():
-		return res.(*commonpb.ReconfResponse), nil
+	case res := <-future.ResultCh():
+		return res.Value.(*commonpb.ReconfResponse), nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

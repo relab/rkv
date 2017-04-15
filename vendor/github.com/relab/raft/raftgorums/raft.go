@@ -25,8 +25,6 @@ const (
 	Leader
 )
 
-//go:generate stringer -type=State
-
 // Timeouts in milliseconds.
 const (
 	// How long we wait for an answer.
@@ -87,12 +85,12 @@ type Raft struct {
 	preElection      bool
 
 	maxAppendEntries uint64
-	queue            chan *raft.EntryFuture
+	queue            chan raft.PromiseEntry
 	pending          *list.List
 
-	pendingReads []*raft.EntryFuture
+	pendingReads []raft.PromiseLogEntry
 
-	applyCh chan *entryFuture
+	applyCh chan raft.PromiseLogEntry
 
 	batch bool
 
@@ -110,12 +108,6 @@ type Raft struct {
 type catchUpReq struct {
 	leaderID   uint64
 	matchIndex uint64
-}
-
-// TODO Just use future.
-type entryFuture struct {
-	entry  *commonpb.Entry
-	future *raft.EntryFuture
 }
 
 // NewRaft returns a new Raft given a configuration.
@@ -144,8 +136,8 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		startElectionNow: make(chan struct{}),
 		preElection:      true,
 		maxAppendEntries: cfg.MaxAppendEntries,
-		queue:            make(chan *raft.EntryFuture, BufferSize),
-		applyCh:          make(chan *entryFuture, 128),
+		queue:            make(chan raft.PromiseEntry, BufferSize),
+		applyCh:          make(chan raft.PromiseLogEntry, 128),
 		rvreqout:         make(chan *pb.RequestVoteRequest, 128),
 		aereqout:         make(chan *pb.AppendEntriesRequest, 128),
 		cureqout:         make(chan *catchUpReq, 16),
@@ -371,7 +363,7 @@ func (r *Raft) runNormal() {
 	}
 }
 
-func (r *Raft) cmdToFuture(cmd []byte, kind commonpb.EntryType) (*raft.EntryFuture, error) {
+func (r *Raft) cmdToFuture(cmd []byte, kind commonpb.EntryType) (raft.PromiseEntry, raft.Future, error) {
 	r.Lock()
 	state := r.state
 	leader := r.leader
@@ -379,7 +371,7 @@ func (r *Raft) cmdToFuture(cmd []byte, kind commonpb.EntryType) (*raft.EntryFutu
 	r.Unlock()
 
 	if state != Leader {
-		return nil, raft.ErrNotLeader{Leader: leader}
+		return nil, nil, raft.ErrNotLeader{Leader: leader}
 	}
 
 	entry := &commonpb.Entry{
@@ -388,7 +380,9 @@ func (r *Raft) cmdToFuture(cmd []byte, kind commonpb.EntryType) (*raft.EntryFutu
 		Data:      cmd,
 	}
 
-	return raft.NewFuture(entry), nil
+	promise, future := raft.NewPromiseLogEntry(entry)
+
+	return promise, future, nil
 }
 
 func (r *Raft) advanceCommitIndex() {
@@ -420,7 +414,7 @@ func (r *Raft) advanceCommitIndex() {
 	}
 
 	for _, future := range r.pendingReads {
-		r.applyCh <- &entryFuture{future.Entry, future}
+		r.applyCh <- future
 		rmetrics.reads.Add(1)
 	}
 
@@ -446,9 +440,9 @@ func (r *Raft) newCommit(old uint64) {
 
 			e := r.pending.Front()
 			if e != nil {
-				future := e.Value.(*raft.EntryFuture)
-				if future.Entry.Index == i {
-					r.applyCh <- &entryFuture{future.Entry, future}
+				future := e.Value.(raft.PromiseLogEntry)
+				if future.Entry().Index == i {
+					r.applyCh <- future
 					r.pending.Remove(e)
 					break
 				}
@@ -459,31 +453,32 @@ func (r *Raft) newCommit(old uint64) {
 			if committed.Index != i {
 				panic("entry tried applied out of order")
 			}
-			r.applyCh <- &entryFuture{committed, nil}
+			r.applyCh <- raft.NewPromiseNoFuture(committed)
 		}
 	}
 }
 
 func (r *Raft) runStateMachine() {
-	apply := func(commit *entryFuture) {
+	apply := func(promise raft.PromiseLogEntry) {
 		var res interface{}
+		entry := promise.Entry()
 
-		switch commit.entry.EntryType {
+		switch entry.EntryType {
 		case commonpb.EntryInternal:
 		case commonpb.EntryNormal:
-			res = r.sm.Apply(commit.entry)
+			res = r.sm.Apply(entry)
 		case commonpb.EntryConfChange:
 			// TODO We should be able to skip the unmarshaling if we
 			// are not recovering.
 			var reconf commonpb.ReconfRequest
-			err := reconf.Unmarshal(commit.entry.Data)
+			err := reconf.Unmarshal(entry.Data)
 
 			if err != nil {
 				panic("could not unmarshal reconf")
 			}
 
 			r.mem.setPending(&reconf)
-			r.mem.set(commit.entry.Index)
+			r.mem.set(entry.Index)
 			// TODO Send to state machine.
 			r.logger.Warnln("Comitted configuration")
 
@@ -502,11 +497,9 @@ func (r *Raft) runStateMachine() {
 			}
 		}
 
-		if commit.future != nil {
-			commit.future.Respond(res)
-			if r.metricsEnabled {
-				rmetrics.cmdCommit.Observe(time.Since(commit.future.Created).Seconds())
-			}
+		promise.Respond(res)
+		if r.metricsEnabled {
+			rmetrics.cmdCommit.Observe(promise.Duration().Seconds())
 		}
 	}
 
@@ -571,14 +564,16 @@ func (r *Raft) sendAppendEntries() {
 LOOP:
 	for i := r.maxAppendEntries; i > 0; i-- {
 		select {
-		case future := <-r.queue:
-			future.Entry.Index = assignIndex
-			if future.Entry.EntryType == commonpb.EntryConfChange {
+		case promise := <-r.queue:
+			promiseEntry := promise.Write(assignIndex)
+			entry := promiseEntry.Entry()
+
+			if entry.EntryType == commonpb.EntryConfChange {
 				reconf = assignIndex
 			}
 			assignIndex++
-			toSave = append(toSave, future.Entry)
-			r.pending.PushBack(future)
+			toSave = append(toSave, entry)
+			r.pending.PushBack(promiseEntry)
 		default:
 			break LOOP
 		}
