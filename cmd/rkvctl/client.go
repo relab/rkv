@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math/rand"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -24,9 +25,22 @@ type client struct {
 	id  uint64
 	seq uint64
 
-	zipf *rand.Zipf
+	zipf *z
 
 	s *stats
+}
+
+// z wraps rand.Zipf with a mutex.
+type z struct {
+	sync.Mutex
+	*rand.Zipf
+}
+
+func (zz *z) Uint64() uint64 {
+	zz.Lock()
+	i := zz.Zipf.Uint64()
+	zz.Unlock()
+	return i
 }
 
 func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats) (*client, error) {
@@ -45,7 +59,7 @@ func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats) (*cl
 	c := &client{
 		l:       leader,
 		servers: conns,
-		zipf:    zipf,
+		zipf:    &z{Zipf: zipf},
 		s:       s,
 	}
 
