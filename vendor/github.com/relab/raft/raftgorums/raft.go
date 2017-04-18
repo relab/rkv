@@ -2,6 +2,7 @@ package raftgorums
 
 import (
 	"container/list"
+	"fmt"
 	"sync"
 	"time"
 
@@ -152,7 +153,7 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 		rvreqout:         make(chan *pb.RequestVoteRequest, 128),
 		aereqout:         make(chan *pb.AppendEntriesRequest, 128),
 		cureqout:         make(chan *catchUpReq, 16),
-		toggle:           make(chan struct{}, 1),
+		toggle:           make(chan struct{}),
 		logger:           cfg.Logger.WithField("raftid", cfg.ID),
 		metricsEnabled:   cfg.MetricsEnabled,
 		stop:             make(chan struct{}),
@@ -164,6 +165,13 @@ func NewRaft(sm raft.StateMachine, cfg *Config) *Raft {
 // Stop forcibly stops the Raft server.
 func (r *Raft) Stop() {
 	close(r.stop)
+	t := time.AfterFunc(time.Second, func() {
+		// Panic if Raft is locked on Stop.
+		panic(fmt.Sprintf("failed to aqcuire lock: %d", r.id))
+	})
+	r.Lock()
+	r.Unlock()
+	t.Stop()
 }
 
 // Run starts a server running the Raft algorithm.
@@ -259,12 +267,12 @@ func (r *Raft) run() {
 		}
 
 		if r.mem.isActive() {
-			r.logger.Warnln("Dormant -> Normal")
+			r.logger.Warnln("Now running in Normal mode")
 			r.Lock()
 			r.state = Follower
 			r.Unlock()
 		} else {
-			r.logger.Warnln("Normal -> Dormant")
+			r.logger.Warnln("Now running in Dormant mode")
 			r.Lock()
 			r.state = Inactive
 			r.Unlock()

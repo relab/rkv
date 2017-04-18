@@ -326,6 +326,12 @@ func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 		defer timer.ObserveDuration()
 	}
 
+	r.logger.WithFields(logrus.Fields{
+		"currentterm":  r.currentTerm,
+		"responseterm": response.Term,
+		"votegranted":  response.VoteGranted,
+	}).Infoln("Got vote response")
+
 	term := r.currentTerm
 
 	if r.preElection {
@@ -351,7 +357,10 @@ func (r *Raft) HandleRequestVoteResponse(response *pb.RequestVoteResponse) {
 	if r.state == Candidate && response.VoteGranted {
 		if r.preElection {
 			r.preElection = false
-			r.startElectionNow <- struct{}{}
+			select {
+			case r.startElectionNow <- struct{}{}:
+			case <-r.stop:
+			}
 			return
 		}
 
@@ -424,30 +433,33 @@ func (r *Raft) HandleAppendEntriesResponse(response *pb.AppendEntriesQFResponse,
 	// #A2 If RPC request or response contains term T > currentTerm: set currentTerm = T, convert to follower.
 	// If we didn't get a response from a majority (excluding self) step down.
 	if response.Term > r.currentTerm || replies < uint64((len(r.mem.get().NodeIDs())+1)/2) {
-		r.becomeFollower(response.Term)
+		// Become follower.
+		select {
+		case r.toggle <- struct{}{}:
+			r.logger.Warnln("Leader stepping down")
+		case <-r.stop:
+		}
 
 		return
 	}
+
+	// Heartbeat to a majority.
+	r.resetElection = true
 
 	// Ignore late response
 	if response.Term < r.currentTerm {
 		return
 	}
 
-	if r.state == Leader {
-		if response.Success {
-			// Successful heartbeat to a majority.
-			r.resetElection = true
+	if response.Success {
+		r.matchIndex = response.MatchIndex
+		r.nextIndex = r.matchIndex + 1
 
-			r.matchIndex = response.MatchIndex
-			r.nextIndex = r.matchIndex + 1
-
-			return
-		}
-
-		// If AppendEntries was not successful lower match index.
-		r.nextIndex = max(1, response.MatchIndex)
+		return
 	}
+
+	// If AppendEntries was not successful lower match index.
+	r.nextIndex = max(1, response.MatchIndex)
 }
 
 func (r *Raft) HandleInstallSnapshotResponse(res *pb.InstallSnapshotResponse) bool {
