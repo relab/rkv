@@ -1,12 +1,15 @@
 package raftgorums_test
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/net/context"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
@@ -15,6 +18,15 @@ import (
 	"github.com/relab/raft"
 	"github.com/relab/raft/commonpb"
 	"github.com/relab/raft/raftgorums"
+)
+
+// These tests depend heavily on the speed of your computer. You might need to
+// increase some of these timeouts to make the tests pass.
+var (
+	heartbeat  = 20 * time.Millisecond
+	election   = 25 * time.Millisecond
+	longEnough = 150 * time.Millisecond
+	wait       = 100 * time.Millisecond
 )
 
 func TestLeaderElection(t *testing.T) {
@@ -32,6 +44,17 @@ func TestLeaderElection(t *testing.T) {
 			})
 			t.Run(fmt.Sprintf("leader stepdown %d, n: %d", j, i), func(t *testing.T) {
 				testElectLeaderStepDown(t, i, j)
+			})
+			if i != j {
+				t.Run(fmt.Sprintf("leader %d, n: %d, add %d", j, i, i), func(t *testing.T) {
+					testProposeConfAdd(t, i, j)
+				})
+			}
+			t.Run(fmt.Sprintf("leader %d, n: %d, remove %d", j, i, i), func(t *testing.T) {
+				testProposeConfRemove(t, i, j)
+			})
+			t.Run(fmt.Sprintf("leader propose cmd %d, n: %d", j, i), func(t *testing.T) {
+				testProposeCmdRead(t, i, j)
 			})
 		}
 	}
@@ -57,10 +80,13 @@ type testServer struct {
 
 var port uint64 = 9201
 
-func newTestServer(t *testing.T, wg *sync.WaitGroup, c *cfg, port uint64) *testServer {
+func newTestServer(t *testing.T, wg *sync.WaitGroup, c *cfg, port uint64, exclude ...uint64) *testServer {
 	initialCluster := make([]uint64, c.n)
+	if len(exclude) > 0 {
+		initialCluster = make([]uint64, c.n-1)
+	}
 
-	for i := uint64(0); i < c.n; i++ {
+	for i := uint64(0); i < uint64(len(initialCluster)); i++ {
 		initialCluster[i] = i + 1
 	}
 
@@ -88,7 +114,7 @@ func newTestServer(t *testing.T, wg *sync.WaitGroup, c *cfg, port uint64) *testS
 		Servers:          servers,
 		InitialCluster:   initialCluster,
 		Storage:          server.mem,
-		HeartbeatTimeout: 10 * time.Millisecond,
+		HeartbeatTimeout: heartbeat,
 		ElectionTimeout:  c.electionTimeout,
 		Logger: &logrus.Logger{
 			Out: ioutil.Discard,
@@ -100,6 +126,7 @@ func newTestServer(t *testing.T, wg *sync.WaitGroup, c *cfg, port uint64) *testS
 
 	if err != nil {
 		t.Errorf("could not listen on %s: %v", cfg.Servers[c.id-1], err)
+		t.FailNow()
 	}
 
 	go func() {
@@ -125,6 +152,7 @@ func (t *testServer) Run() {
 
 	if err != nil {
 		t.t.Error(err)
+		t.t.FailNow()
 	}
 }
 
@@ -134,13 +162,13 @@ func testElectLeader(t *testing.T, n uint64, leader uint64) {
 	servers := make(map[uint64]*testServer, n)
 
 	p := port
-	port += n + 1
+	port += n + 10
 
 	for i := n; i > 0; i-- {
 		wg.Add(1)
-		timeout := time.Second
+		timeout := longEnough
 		if i == leader {
-			timeout = 25 * time.Millisecond
+			timeout = election
 		}
 		servers[i] = newTestServer(t, &wg, &cfg{
 			id:              i,
@@ -149,7 +177,7 @@ func testElectLeader(t *testing.T, n uint64, leader uint64) {
 		}, p)
 	}
 
-	time.AfterFunc(500*time.Millisecond, func() {
+	time.AfterFunc(longEnough, func() {
 		for i := n; i > 0; i-- {
 			servers[i].Stop()
 		}
@@ -159,6 +187,10 @@ func testElectLeader(t *testing.T, n uint64, leader uint64) {
 		go servers[i].Run()
 	}
 	wg.Wait()
+
+	if servers[leader].kv[raft.KeyTerm] == 0 {
+		t.Skipf("skipping test as no leader was elected")
+	}
 
 	var votes uint64
 
@@ -177,13 +209,13 @@ func testElectLeaderStepDown(t *testing.T, n uint64, leader uint64) {
 	servers := make(map[uint64]*testServer, n)
 
 	p := port
-	port += n + 1
+	port += n + 10
 
 	for i := n; i > 0; i-- {
 		wg.Add(1)
-		timeout := time.Second
+		timeout := longEnough
 		if i == leader {
-			timeout = 25 * time.Millisecond
+			timeout = election
 		}
 		servers[i] = newTestServer(t, &wg, &cfg{
 			id:              i,
@@ -192,14 +224,14 @@ func testElectLeaderStepDown(t *testing.T, n uint64, leader uint64) {
 		}, p)
 	}
 
-	time.AfterFunc(500*time.Millisecond, func() {
+	time.AfterFunc(longEnough, func() {
 		for i := n; i > 0; i-- {
 			if i != leader {
 				servers[i].Stop()
 			}
 		}
 
-		time.Sleep(4 * servers[leader].timeout)
+		time.Sleep(3 * servers[leader].timeout)
 		servers[leader].Stop()
 	})
 
@@ -208,6 +240,10 @@ func testElectLeaderStepDown(t *testing.T, n uint64, leader uint64) {
 	}
 	wg.Wait()
 
+	if servers[leader].kv[raft.KeyTerm] == 0 {
+		t.Skipf("skipping test as no leader was elected")
+	}
+
 	var votes uint64
 
 	for i := n; i > 0; i-- {
@@ -215,6 +251,288 @@ func testElectLeaderStepDown(t *testing.T, n uint64, leader uint64) {
 	}
 
 	checkLeaderState(t, servers[leader].raft.State(), raftgorums.Candidate)
+	checkFollowersState(t, servers, leader)
+	checkVotes(t, votes, n)
+}
+
+func testProposeConfAdd(t *testing.T, n uint64, leader uint64) {
+	var wg sync.WaitGroup
+
+	servers := make(map[uint64]*testServer, n)
+
+	p := port
+	port += n + 10
+
+	for i := n; i > 0; i-- {
+		wg.Add(1)
+		timeout := longEnough
+		if i == leader {
+			timeout = election
+		}
+		servers[i] = newTestServer(t, &wg, &cfg{
+			id:              i,
+			n:               n,
+			electionTimeout: timeout,
+		}, p, n)
+	}
+
+	time.AfterFunc(longEnough, func() {
+		for i := n; i > 0; i-- {
+			servers[i].Stop()
+		}
+	})
+
+	for i := n; i > 0; i-- {
+		go servers[i].Run()
+	}
+
+	time.Sleep(wait)
+
+	if servers[leader].kv[raft.KeyTerm] == 0 {
+		t.Skipf("skipping test as no leader was elected")
+	}
+
+	future, err := servers[leader].raft.ProposeConf(context.Background(), &commonpb.ReconfRequest{
+		ServerID:   n,
+		ReconfType: commonpb.ReconfAdd,
+	})
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	for i := n; i > 0; i-- {
+		if i == leader {
+			continue
+		}
+
+		_, err := servers[i].raft.ProposeConf(context.Background(), &commonpb.ReconfRequest{})
+
+		if err == nil {
+			t.Errorf("can't propose conf on non-leader %d", i)
+			return
+		}
+	}
+
+	res := <-future.ResultCh()
+	reconfStatus := res.Value.(*commonpb.ReconfResponse).Status
+
+	if reconfStatus != commonpb.ReconfOK {
+		t.Errorf("reconf: got %d, want %d", reconfStatus, commonpb.ReconfOK)
+		return
+	}
+
+	wg.Wait()
+
+	var votes uint64
+
+	for i := n; i > 0; i-- {
+		votes += checkKVs(t, servers[i].kv, 1, 3, leader)
+	}
+
+	checkLeaderState(t, servers[leader].raft.State(), raftgorums.Leader)
+	checkFollowersState(t, servers, leader)
+	checkVotes(t, votes, n-1)
+}
+
+func testProposeConfRemove(t *testing.T, n uint64, leader uint64) {
+	var wg sync.WaitGroup
+
+	servers := make(map[uint64]*testServer, n)
+
+	p := port
+	port += n + 10
+
+	for i := n; i > 0; i-- {
+		wg.Add(1)
+		timeout := longEnough
+		if i == leader {
+			timeout = election
+		}
+		servers[i] = newTestServer(t, &wg, &cfg{
+			id:              i,
+			n:               n,
+			electionTimeout: timeout,
+		}, p)
+	}
+
+	time.AfterFunc(longEnough, func() {
+		for i := n; i > 0; i-- {
+			servers[i].Stop()
+		}
+	})
+
+	for i := n; i > 0; i-- {
+		go servers[i].Run()
+	}
+
+	time.Sleep(wait)
+
+	if servers[leader].kv[raft.KeyTerm] == 0 {
+		t.Skipf("skipping test as no leader was elected")
+	}
+
+	future, err := servers[leader].raft.ProposeConf(context.Background(), &commonpb.ReconfRequest{
+		ServerID:   n,
+		ReconfType: commonpb.ReconfRemove,
+	})
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	res := <-future.ResultCh()
+	reconfStatus := res.Value.(*commonpb.ReconfResponse).Status
+
+	if n > 2 {
+		if reconfStatus != commonpb.ReconfOK {
+			t.Errorf("reconf: got %d, want %d", reconfStatus, commonpb.ReconfOK)
+			return
+		}
+	} else {
+		// Cannot do reconf. if next config size < 2.
+		if reconfStatus != commonpb.ReconfTimeout {
+			t.Errorf("reconf: got %d, want %d", reconfStatus, commonpb.ReconfTimeout)
+			return
+		}
+	}
+
+	wg.Wait()
+
+	var votes uint64
+
+	if leader == n && n != 2 {
+		checkLeaderState(t, servers[leader].raft.State(), raftgorums.Inactive)
+		votes = checkKVs(t, servers[n].kv, 1, 3, leader)
+	} else {
+		checkLeaderState(t, servers[leader].raft.State(), raftgorums.Leader)
+		votes = checkKVs(t, servers[n].kv, 1, 2, leader)
+	}
+
+	if n == 2 {
+		votes += checkKVs(t, servers[1].kv, 1, 2, leader)
+	} else {
+		for i := n - 1; i > 0; i-- {
+			votes += checkKVs(t, servers[i].kv, 1, 3, leader)
+		}
+	}
+
+	checkFollowersState(t, servers, leader)
+	checkVotes(t, votes, n)
+}
+
+func testProposeCmdRead(t *testing.T, n uint64, leader uint64) {
+	var wg sync.WaitGroup
+
+	servers := make(map[uint64]*testServer, n)
+
+	p := port
+	port += n + 10
+
+	for i := n; i > 0; i-- {
+		wg.Add(1)
+		timeout := longEnough
+		if i == leader {
+			timeout = election
+		}
+		servers[i] = newTestServer(t, &wg, &cfg{
+			id:              i,
+			n:               n,
+			electionTimeout: timeout,
+		}, p)
+	}
+
+	time.AfterFunc(longEnough, func() {
+		for i := n; i > 0; i-- {
+			servers[i].Stop()
+		}
+	})
+
+	for i := n; i > 0; i-- {
+		go servers[i].Run()
+	}
+
+	time.Sleep(wait)
+
+	if servers[leader].kv[raft.KeyTerm] == 0 {
+		t.Skipf("skipping test as no leader was elected")
+	}
+
+	future, err := servers[leader].raft.ProposeCmd(context.Background(), raft.NOOP)
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	for i := n; i > 0; i-- {
+		if i == leader {
+			continue
+		}
+
+		_, err := servers[i].raft.ProposeCmd(context.Background(), raft.NOOP)
+
+		if err == nil {
+			t.Errorf("can't propose cmd on non-leader %d", i)
+			return
+		}
+	}
+
+	res := <-future.ResultCh()
+
+	entry := res.Value.(*commonpb.Entry)
+
+	if res.Index != 2 {
+		t.Errorf("index: got %d, want %d", res.Index, 2)
+	}
+
+	if !bytes.Equal(entry.Data, raft.NOOP) {
+		t.Errorf("data: got %s, want %s", entry.Data, raft.NOOP)
+	}
+
+	future, err = servers[leader].raft.ReadCmd(context.Background(), raft.NOOP)
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	for i := n; i > 0; i-- {
+		if i == leader {
+			continue
+		}
+
+		_, err := servers[i].raft.ReadCmd(context.Background(), raft.NOOP)
+
+		if err == nil {
+			t.Errorf("can't read cmd on non-leader %d", i)
+			return
+		}
+	}
+
+	res = <-future.ResultCh()
+
+	entry = res.Value.(*commonpb.Entry)
+
+	if res.Index != 0 {
+		t.Errorf("index: got %d, want %d", res.Index, 0)
+	}
+
+	if !bytes.Equal(entry.Data, raft.NOOP) {
+		t.Errorf("data: got %s, want %s", entry.Data, raft.NOOP)
+	}
+
+	wg.Wait()
+
+	var votes uint64
+
+	for i := n; i > 0; i-- {
+		votes += checkKVs(t, servers[i].kv, 1, 3, leader)
+	}
+
+	checkLeaderState(t, servers[leader].raft.State(), raftgorums.Leader)
 	checkFollowersState(t, servers, leader)
 	checkVotes(t, votes, n)
 }
