@@ -5,10 +5,12 @@ import (
 	"math/rand"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/relab/raft/commonpb"
 )
 
 // Arbitrary seed.
@@ -25,6 +27,10 @@ func main() {
 		reads      = flag.Float64("reads", 0, "percentage of requests which should be reads")
 		throughput = flag.Int("throughput", 1, "send [throughput] requests per second per client")
 
+		forever = flag.Bool("forever", true, "send requests forever")
+		dur     = flag.Duration("time", 0, "send requests for [time] duration, overrides forever")
+		count   = flag.Uint64("count", 0, "send [count] requests, overrides time and forever")
+
 		keyspace = flag.Uint64("keyspace", 10000, "number of keys to touch")
 		zipfs    = flag.Float64("zipfs", 1.1, "zipf s parameter")
 		zipfv    = flag.Float64("zipfv", 4, "zipf v parameter")
@@ -35,8 +41,18 @@ func main() {
 		panic("can only do one reconfiguration at the time")
 	}
 
+	if *dur > 0 || *count > 0 {
+		*forever = false
+	}
+
+	if *dur > 0 && *count > 0 {
+		*dur = 0
+	}
+
 	var leader uint64
 	servers := strings.Split(*cluster, ",")
+
+	var wg sync.WaitGroup
 
 	for i := 0; i < *clients; i++ {
 		rndsrc := rand.New(rand.NewSource(seedStart + int64(i)))
@@ -55,12 +71,17 @@ func main() {
 			removeServer(c, *remove)
 			return
 		default:
-			go runClient(c, *throughput, *reads)
+			wg.Add(1)
+			go runClient(c, &wg, *throughput, *reads, *forever, *dur, *count)
 		}
 	}
 
-	http.Handle("/metrics", promhttp.Handler())
-	logrus.Fatal(http.ListenAndServe(":59100", nil))
+	if *forever {
+		http.Handle("/metrics", promhttp.Handler())
+		logrus.Fatal(http.ListenAndServe(":59100", nil))
+	}
+
+	wg.Wait()
 }
 
 func addServer(c *client, serverID uint64) {
@@ -97,10 +118,12 @@ func removeServer(c *client, serverID uint64) {
 	}
 }
 
-func runClient(c *client, throughput int, reads float64) {
+func runClient(c *client, wg *sync.WaitGroup, throughput int, reads float64, forever bool, dur time.Duration, count uint64) {
+	defer wg.Done()
+
 	sleep := time.Second / time.Duration(throughput)
 
-	for {
+	loop := func() {
 		r := rand.Float64()
 
 		if r < reads {
@@ -109,5 +132,27 @@ func runClient(c *client, throughput int, reads float64) {
 			go c.insert()
 		}
 		time.Sleep(sleep)
+	}
+
+	switch {
+	case forever:
+		for {
+			loop()
+		}
+	case count > 0:
+		for i := uint64(0); i < count; i++ {
+			loop()
+		}
+	default:
+		timeout := time.After(dur)
+
+		for {
+			select {
+			case <-timeout:
+				return
+			default:
+				loop()
+			}
+		}
 	}
 }
