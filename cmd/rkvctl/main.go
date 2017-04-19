@@ -66,13 +66,35 @@ func main() {
 func addServer(c *client, serverID uint64) {
 	res, err := c.addServer(serverID)
 
-	logrus.WithError(err).WithField("res", res).Warnln("Tried to add server")
+	logger := logrus.WithError(err)
+
+	switch res.Status {
+	case commonpb.ReconfOK:
+		logger.Println("Successfully added server")
+	case commonpb.ReconfNotLeader:
+		logger.Warnln("Not leader")
+	case commonpb.ReconfTimeout:
+		logger.Warnln("Either adding server took too long, or the proposed configuration is invalid")
+	default:
+		logger.Panicln("invalid reconf status")
+	}
 }
 
 func removeServer(c *client, serverID uint64) {
 	res, err := c.removeServer(serverID)
 
-	logrus.WithError(err).WithField("res", res).Warnln("Tried to remove server")
+	logger := logrus.WithError(err)
+
+	switch res.Status {
+	case commonpb.ReconfOK:
+		logger.Println("Successfully removed server")
+	case commonpb.ReconfNotLeader:
+		logger.Warnln("Not leader")
+	case commonpb.ReconfTimeout:
+		logger.Warnln("Either removing server took too long, or the proposed configuration is invalid")
+	default:
+		logger.Panicln("invalid reconf status")
+	}
 }
 
 func runClient(c *client, throughput int, reads float64) {
