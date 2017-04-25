@@ -65,7 +65,7 @@ func (s *Store) Apply(entry *commonpb.Entry) interface{} {
 		}
 
 		return res
-	case commonpb.EntryConfChange:
+	case commonpb.EntryReconf:
 		// TODO s.snapshotMaybe(entry)?
 		panic("not implemented yet")
 	default:

@@ -8,9 +8,9 @@ option (gogoproto.goproto_enum_prefix_all) = false;
 option (gogoproto.goproto_getters_all) = false;
 
 enum EntryType {
-  EntryInternal   = 0;
-  EntryNormal     = 1;
-  EntryConfChange = 2;
+  EntryInternal = 0;
+  EntryNormal   = 1;
+  EntryReconf   = 2;
 }
 
 message Entry {
@@ -33,8 +33,8 @@ message Snapshot {
 
 enum ReconfStatus {
   ReconfOK        = 0;
-  ReconfTimeout   = 2;
-  ReconfNotLeader = 3;
+  ReconfTimeout   = 1;
+  ReconfNotLeader = 2;
 }
 
 enum ReconfType {
