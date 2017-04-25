@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/go-kit/kit/metrics"
 	"github.com/go-kit/kit/metrics/prometheus"
 	promc "github.com/prometheus/client_golang/prometheus"
@@ -21,12 +23,14 @@ var s = &stats{
 		Subsystem: "client",
 		Name:      "read_latency",
 		Help:      "Read request response time.",
+		MaxAge:    5 * time.Second,
 	}, []string{}),
 	writeLatency: prometheus.NewSummaryFrom(promc.SummaryOpts{
 		Namespace: "raft",
 		Subsystem: "client",
 		Name:      "write_latency",
 		Help:      "Write request response time.",
+		MaxAge:    5 * time.Second,
 	}, []string{}),
 	readReqs: prometheus.NewCounterFrom(promc.CounterOpts{
 		Namespace: "raft",
