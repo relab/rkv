@@ -182,14 +182,16 @@ func (c *client) lookup() (*rkvpb.LookupResponse, error) {
 	var res *rkvpb.LookupResponse
 	var err error
 
+	req := &rkvpb.LookupRequest{
+		Key: strconv.FormatUint(c.zipf.Uint64(), 10),
+	}
+
 	for i := 0; i < retryPerServer*len(c.servers); i++ {
 		if i%len(c.servers) == 0 {
 			sleep(i / len(c.servers))
 		}
 
-		res, err = c.leader().Lookup(ctx, &rkvpb.LookupRequest{
-			Key: strconv.FormatUint(c.zipf.Uint64(), 10),
-		})
+		res, err = c.leader().Lookup(ctx, req)
 
 		if err != nil {
 			c.nextLeader()
@@ -223,17 +225,19 @@ func (c *client) insert() (*rkvpb.InsertResponse, error) {
 	var res *rkvpb.InsertResponse
 	var err error
 
+	req := &rkvpb.InsertRequest{
+		ClientID:  c.id,
+		ClientSeq: atomic.AddUint64(&c.seq, 1),
+		Key:       strconv.FormatUint(c.zipf.Uint64(), 10),
+		Value:     strconv.FormatUint(c.zipf.Uint64(), 10),
+	}
+
 	for i := 0; i < retryPerServer*len(c.servers); i++ {
 		if i%len(c.servers) == 0 {
 			sleep(i / len(c.servers))
 		}
 
-		res, err = c.leader().Insert(ctx, &rkvpb.InsertRequest{
-			ClientID:  c.id,
-			ClientSeq: atomic.AddUint64(&c.seq, 1),
-			Key:       strconv.FormatUint(c.zipf.Uint64(), 10),
-			Value:     strconv.FormatUint(c.zipf.Uint64(), 10),
-		})
+		res, err = c.leader().Insert(ctx, req)
 
 		if err != nil {
 			c.nextLeader()
