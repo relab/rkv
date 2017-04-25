@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/go-kit/kit/metrics"
 	"github.com/relab/raft/commonpb"
 	"github.com/relab/rkv/rkvpb"
@@ -76,19 +77,27 @@ func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats) (*cl
 }
 
 const (
-	retryPerServer = 10
-	sleepPerRound  = 250 * time.Millisecond
 	requestTimeout = 10 * time.Minute
 	maxInFlight    = 15000
 )
 
+func newBackOff() *backoff.ExponentialBackOff {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = 1 * time.Millisecond
+	b.RandomizationFactor = 0.5
+	b.Multiplier = 1.5
+	b.MaxInterval = 1 * time.Second
+	b.MaxElapsedTime = 15 * time.Minute
+	b.Reset()
+	return b
+}
+
+func notify(err error, d time.Duration) {
+	// TODO For debugging.
+}
+
 // ErrMaxInFlightReached indicates that there are too many messages in-flight.
 var ErrMaxInFlightReached = errors.New("reached max in-flight")
-
-func sleep(round int) {
-	dur := sleepPerRound * time.Duration(round)
-	time.Sleep(dur)
-}
 
 func (c *client) addServer(serverID uint64) (*commonpb.ReconfResponse, error) {
 	return c.reconf(serverID, commonpb.ReconfAdd)
@@ -103,13 +112,9 @@ func (c *client) reconf(serverID uint64, reconfType commonpb.ReconfType) (*commo
 	defer cancel()
 
 	var res *commonpb.ReconfResponse
-	var err error
 
-	for i := 0; i < retryPerServer*len(c.servers); i++ {
-		if i%len(c.servers) == 0 {
-			sleep(i / len(c.servers))
-		}
-
+	op := func() error {
+		var err error
 		res, err = c.leader().Reconf(ctx, &commonpb.ReconfRequest{
 			ServerID:   serverID,
 			ReconfType: reconfType,
@@ -117,11 +122,13 @@ func (c *client) reconf(serverID uint64, reconfType commonpb.ReconfType) (*commo
 
 		if err != nil {
 			c.nextLeader()
-			continue
+			return err
 		}
 
-		break
+		return nil
 	}
+
+	err := backoff.RetryNotify(op, backoff.WithContext(newBackOff(), ctx), notify)
 
 	return res, err
 }
@@ -142,24 +149,23 @@ func (c *client) register() (*rkvpb.RegisterResponse, error) {
 	defer cancel()
 
 	var res *rkvpb.RegisterResponse
-	var err error
 
-	for i := 0; i < retryPerServer*len(c.servers); i++ {
-		if i%len(c.servers) == 0 {
-			sleep(i / len(c.servers))
-		}
-
+	op := func() error {
+		var err error
 		res, err = c.leader().Register(ctx, &rkvpb.RegisterRequest{})
 
 		if err != nil {
 			c.nextLeader()
-			continue
+			return err
 		}
 
 		c.s.writes.Add(1)
 		timer.ObserveDuration()
-		break
+		return nil
+
 	}
+
+	err := backoff.RetryNotify(op, backoff.WithContext(newBackOff(), ctx), notify)
 
 	return res, err
 }
@@ -180,29 +186,26 @@ func (c *client) lookup() (*rkvpb.LookupResponse, error) {
 	defer cancel()
 
 	var res *rkvpb.LookupResponse
-	var err error
 
 	req := &rkvpb.LookupRequest{
 		Key: strconv.FormatUint(c.zipf.Uint64(), 10),
 	}
 
-	for i := 0; i < retryPerServer*len(c.servers); i++ {
-		if i%len(c.servers) == 0 {
-			sleep(i / len(c.servers))
-		}
-
+	op := func() error {
+		var err error
 		res, err = c.leader().Lookup(ctx, req)
 
 		if err != nil {
 			c.nextLeader()
-			continue
+			return err
 		}
 
 		c.s.reads.Add(1)
 		timer.ObserveDuration()
-		break
-
+		return nil
 	}
+
+	err := backoff.RetryNotify(op, backoff.WithContext(newBackOff(), ctx), notify)
 
 	return res, err
 }
@@ -223,7 +226,6 @@ func (c *client) insert() (*rkvpb.InsertResponse, error) {
 	defer cancel()
 
 	var res *rkvpb.InsertResponse
-	var err error
 
 	req := &rkvpb.InsertRequest{
 		ClientID:  c.id,
@@ -232,22 +234,21 @@ func (c *client) insert() (*rkvpb.InsertResponse, error) {
 		Value:     strconv.FormatUint(c.zipf.Uint64(), 10),
 	}
 
-	for i := 0; i < retryPerServer*len(c.servers); i++ {
-		if i%len(c.servers) == 0 {
-			sleep(i / len(c.servers))
-		}
-
+	op := func() error {
+		var err error
 		res, err = c.leader().Insert(ctx, req)
 
 		if err != nil {
 			c.nextLeader()
-			continue
+			return err
 		}
 
 		c.s.writes.Add(1)
 		timer.ObserveDuration()
-		break
+		return nil
 	}
+
+	err := backoff.RetryNotify(op, backoff.WithContext(newBackOff(), ctx), notify)
 
 	return res, err
 }
