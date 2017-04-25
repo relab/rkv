@@ -8,7 +8,7 @@ imports:
 - name: github.com/boltdb/bolt
   version: e9cf4fae01b5a8ff89d0ec6b32f0d9c9f79aefdd
 - name: github.com/go-kit/kit
-  version: d0853eec8cfdfc051ef0b6a19f502d6f1d322c33
+  version: 8a2988aa81f699fc1e647c3c9dddce0113ef1bfb
   subpackages:
   - metrics
   - metrics/internal/lv
@@ -49,13 +49,13 @@ imports:
   - internal/bitbucket.org/ww/goautoneg
   - model
 - name: github.com/prometheus/procfs
-  version: a1dba9ce8baed984a2495b658c82687f8157b98f
+  version: 6ac8c5d890d415025dd5aae7595bcb2a6e7e2fad
   subpackages:
   - xfs
 - name: github.com/relab/gorums
   version: 778c334f48ea1bc4775aae133b05a09bd740b8a2
 - name: github.com/relab/raft
-  version: a9882221363564dffafdaf1fe68a82017ac8f4f3
+  version: 8cf75c76248284b029ae2efa746067e6cc3d9da5
   subpackages:
   - commonpb
   - raftgorums
@@ -64,7 +64,7 @@ imports:
 - name: github.com/Sirupsen/logrus
   version: ba1b36c82c5e05c4f912a88eab0dcd91a171688f
 - name: golang.org/x/net
-  version: 5602c733f70afc6dcec6766be0d5034d4c4f14de
+  version: da118f7b8e5954f39d0d2130ab35d4bf0e3cb344
   subpackages:
   - context
   - http2
@@ -74,11 +74,11 @@ imports:
   - lex/httplex
   - trace
 - name: golang.org/x/sys
-  version: f3918c30c5c2cb527c0b071a27c35120a6c0719a
+  version: 8c0a5eacbac818f9011015b17992f53d9cec3e8f
   subpackages:
   - unix
 - name: golang.org/x/text
-  version: f4b4367115ec2de254587813edaa901bc1c723a8
+  version: a9a820217f98f7c8a207ec1e45a874e1fe12c478
   subpackages:
   - secure/bidirule
   - transform
