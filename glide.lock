@@ -1,5 +1,5 @@
 hash: 3e55cdac972dba43a38959f67882096a73d4ef78e8e8d183e2ac09fc63d16756
-updated: 2017-04-25T14:43:01.792307084+02:00
+updated: 2017-04-26T15:28:17.942953808+02:00
 imports:
 - name: github.com/beorn7/perks
   version: 4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9
@@ -57,7 +57,7 @@ imports:
 - name: github.com/relab/gorums
   version: 778c334f48ea1bc4775aae133b05a09bd740b8a2
 - name: github.com/relab/raft
-  version: 07452e9fea45a7c2edb9aca64d1dfb0b096ce4e5
+  version: 7cee657f06c008c44c6600e72a482963f78ffad0
   subpackages:
   - commonpb
   - raftgorums
@@ -76,7 +76,7 @@ imports:
   - lex/httplex
   - trace
 - name: golang.org/x/sys
-  version: 8c0a5eacbac818f9011015b17992f53d9cec3e8f
+  version: 9f30dcbe5be197894515a338a9bda9253567ea8f
   subpackages:
   - unix
 - name: golang.org/x/text
