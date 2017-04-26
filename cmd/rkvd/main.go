@@ -26,15 +26,16 @@ import (
 
 func main() {
 	var (
-		id               = flag.Uint64("id", 0, "server ID")
-		servers          = flag.String("servers", ":9201,:9202,:9203,:9204,:9205,:9206,:9207", "comma separated list of server addresses")
-		cluster          = flag.String("cluster", "1,2,3", "comma separated list of server ids to form cluster with, [1 >= id <= len(servers)]")
-		bench            = flag.Bool("quiet", false, "Silence log output")
-		recover          = flag.Bool("recover", false, "Recover from stable storage")
-		batch            = flag.Bool("batch", true, "enable batching")
-		electionTimeout  = flag.Duration("election", time.Second, "How long servers wait before starting an election")
-		heartbeatTimeout = flag.Duration("heartbeat", 20*time.Millisecond, "How often a heartbeat should be sent")
-		maxAppendEntries = flag.Uint64("maxappend", 10000, "Max entries per AppendEntries message")
+		id                = flag.Uint64("id", 0, "server ID")
+		servers           = flag.String("servers", ":9201,:9202,:9203,:9204,:9205,:9206,:9207", "comma separated list of server addresses")
+		cluster           = flag.String("cluster", "1,2,3", "comma separated list of server ids to form cluster with, [1 >= id <= len(servers)]")
+		bench             = flag.Bool("quiet", false, "Silence log output")
+		recover           = flag.Bool("recover", false, "Recover from stable storage")
+		batch             = flag.Bool("batch", true, "enable batching")
+		electionTimeout   = flag.Duration("election", time.Second, "How long servers wait before starting an election")
+		heartbeatTimeout  = flag.Duration("heartbeat", 20*time.Millisecond, "How often a heartbeat should be sent")
+		entriesPerMsg     = flag.Uint64("entriespermsg", 64, "Entries per Appendentries message")
+		catchupMultiplier = flag.Uint64("catchupmultiplier", 160, "How many more times entries per message allowed during catch up")
 	)
 
 	flag.Parse()
@@ -88,8 +89,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *maxAppendEntries < 1 {
-		fmt.Print("-maxappend must be atleast 1\n\n")
+	if *entriesPerMsg < 1 {
+		fmt.Print("-entriespermsg must be atleast 1\n\n")
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	if *catchupMultiplier < 1 {
+		fmt.Print("-catchupmultiplier must be atleast 1\n\n")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -129,16 +136,17 @@ func main() {
 	grpcServer := grpc.NewServer()
 
 	raft := raftgorums.NewRaft(NewStore(), &raftgorums.Config{
-		ID:               *id,
-		Servers:          nodes,
-		InitialCluster:   ids,
-		Batch:            *batch,
-		Storage:          storageWithCache,
-		ElectionTimeout:  *electionTimeout,
-		HeartbeatTimeout: *heartbeatTimeout,
-		MaxAppendEntries: *maxAppendEntries,
-		Logger:           logger,
-		MetricsEnabled:   true,
+		ID:                *id,
+		Servers:           nodes,
+		InitialCluster:    ids,
+		Batch:             *batch,
+		Storage:           storageWithCache,
+		ElectionTimeout:   *electionTimeout,
+		HeartbeatTimeout:  *heartbeatTimeout,
+		EntriesPerMsg:     *entriesPerMsg,
+		CatchupMultiplier: *catchupMultiplier,
+		Logger:            logger,
+		MetricsEnabled:    true,
 	})
 
 	service := NewService(raft)

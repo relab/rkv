@@ -47,6 +47,10 @@ func NewStore() *Store {
 // Apply implements raft.StateMachine.
 func (s *Store) Apply(entry *commonpb.Entry) interface{} {
 	switch entry.EntryType {
+	case commonpb.EntryInternal:
+		// Ignore internal messages, Raft will never read the response
+		// for an internal message.
+		return nil
 	case commonpb.EntryNormal:
 		var cmd rkvpb.Cmd
 		err := cmd.Unmarshal(entry.Data)
@@ -66,8 +70,10 @@ func (s *Store) Apply(entry *commonpb.Entry) interface{} {
 
 		return res
 	case commonpb.EntryReconf:
-		// TODO s.snapshotMaybe(entry)?
-		panic("not implemented yet")
+		// TODO s.snapshotMaybe(entry)? Raft should never read the
+		// result from a reconfiguration. It is merely sent to inform
+		// the state machine.
+		return nil
 	default:
 		panic(fmt.Sprintf("got unknown entry type: %v", entry.EntryType))
 	}
