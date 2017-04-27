@@ -17,6 +17,8 @@ import:
   - commonpb
   - raftgorums
 - package: github.com/relab/gorums
+  repo: https://github.com/s111/gorums.git
+  vcs: git
   version: per_node_arg
 - package: golang.org/x/net
   subpackages:

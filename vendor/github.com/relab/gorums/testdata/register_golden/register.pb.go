@@ -432,7 +432,7 @@ var _ = codes.OK
 // ReadPrelimReply is a reference to a correctable quorum call
 // with server side preliminary reply support.
 type ReadPrelimReply struct {
-	sync.Mutex
+	mu sync.Mutex
 	// the actual reply
 	*State
 	NodeIDs  []uint32
@@ -468,8 +468,8 @@ func (c *Configuration) ReadPrelim(ctx context.Context, args *ReadRequest) *Read
 // reply has yet been received. The Done or Watch methods should be used to
 // ensure that a reply is available.
 func (c *ReadPrelimReply) Get() (*State, int, error) {
-	c.Lock()
-	defer c.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.State, c.level, c.err
 }
 
@@ -486,24 +486,24 @@ func (c *ReadPrelimReply) Done() <-chan struct{} {
 // disregardless of the specified level.
 func (c *ReadPrelimReply) Watch(level int) <-chan struct{} {
 	ch := make(chan struct{})
-	c.Lock()
+	c.mu.Lock()
 	if level < c.level {
 		close(ch)
-		c.Unlock()
+		c.mu.Unlock()
 		return ch
 	}
 	c.watchers = append(c.watchers, &struct {
 		level int
 		ch    chan struct{}
 	}{level, ch})
-	c.Unlock()
+	c.mu.Unlock()
 	return ch
 }
 
 func (c *ReadPrelimReply) set(reply *State, level int, err error, done bool) {
-	c.Lock()
+	c.mu.Lock()
 	if c.done {
-		c.Unlock()
+		c.mu.Unlock()
 		panic("set(...) called on a done correctable")
 	}
 	c.State, c.level, c.err, c.done = reply, level, err, done
@@ -514,7 +514,7 @@ func (c *ReadPrelimReply) set(reply *State, level int, err error, done bool) {
 				close(watcher.ch)
 			}
 		}
-		c.Unlock()
+		c.mu.Unlock()
 		return
 	}
 	for i := range c.watchers {
@@ -523,7 +523,7 @@ func (c *ReadPrelimReply) set(reply *State, level int, err error, done bool) {
 			c.watchers[i] = nil
 		}
 	}
-	c.Unlock()
+	c.mu.Unlock()
 }
 
 /* Unexported types and methods for correctable prelim method ReadPrelim */
@@ -605,7 +605,7 @@ func callGRPCReadPrelim(ctx context.Context, node *Node, arg *ReadRequest, reply
 
 // ReadCorrectableReply is a reference to a correctable ReadCorrectable quorum call.
 type ReadCorrectableReply struct {
-	sync.Mutex
+	mu sync.Mutex
 	// the actual reply
 	*State
 	NodeIDs  []uint32
@@ -641,8 +641,8 @@ func (c *Configuration) ReadCorrectable(ctx context.Context, args *ReadRequest) 
 // reply has yet been received. The Done or Watch methods should be used to
 // ensure that a reply is available.
 func (c *ReadCorrectableReply) Get() (*State, int, error) {
-	c.Lock()
-	defer c.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.State, c.level, c.err
 }
 
@@ -659,24 +659,24 @@ func (c *ReadCorrectableReply) Done() <-chan struct{} {
 // disregardless of the specified level.
 func (c *ReadCorrectableReply) Watch(level int) <-chan struct{} {
 	ch := make(chan struct{})
-	c.Lock()
+	c.mu.Lock()
 	if level < c.level {
 		close(ch)
-		c.Unlock()
+		c.mu.Unlock()
 		return ch
 	}
 	c.watchers = append(c.watchers, &struct {
 		level int
 		ch    chan struct{}
 	}{level, ch})
-	c.Unlock()
+	c.mu.Unlock()
 	return ch
 }
 
 func (c *ReadCorrectableReply) set(reply *State, level int, err error, done bool) {
-	c.Lock()
+	c.mu.Lock()
 	if c.done {
-		c.Unlock()
+		c.mu.Unlock()
 		panic("set(...) called on a done correctable")
 	}
 	c.State, c.level, c.err, c.done = reply, level, err, done
@@ -687,7 +687,7 @@ func (c *ReadCorrectableReply) set(reply *State, level int, err error, done bool
 				close(watcher.ch)
 			}
 		}
-		c.Unlock()
+		c.mu.Unlock()
 		return
 	}
 	for i := range c.watchers {
@@ -696,7 +696,7 @@ func (c *ReadCorrectableReply) set(reply *State, level int, err error, done bool
 			c.watchers[i] = nil
 		}
 	}
-	c.Unlock()
+	c.mu.Unlock()
 }
 
 /* Unexported types and methods for correctable method ReadCorrectable */
@@ -1515,7 +1515,7 @@ type Node struct {
 
 	WriteAsyncClient Register_WriteAsyncClient
 
-	sync.Mutex
+	mu      sync.Mutex
 	lastErr error
 	latency time.Duration
 }
@@ -1652,7 +1652,6 @@ func Equal(a, b *Configuration) bool { return a.id == b.id }
 func NewTestConfiguration(q, n int) *Configuration {
 	return &Configuration{
 		nodes: make([]*Node, n),
-		errs:  make(chan CallGRPCError, 128),
 	}
 }
 
@@ -1721,7 +1720,7 @@ const LevelNotSet = -1
 // Manager manages a pool of node configurations on which quorum remote
 // procedure calls can be made.
 type Manager struct {
-	sync.Mutex
+	mu       sync.Mutex
 	nodes    []*Node
 	lookup   map[uint32]*Node
 	configs  map[uint32]*Configuration
@@ -1779,8 +1778,8 @@ func NewManager(nodeAddrs []string, opts ...ManagerOption) (*Manager, error) {
 }
 
 func (m *Manager) createNode(addr string) (*Node, error) {
-	m.Lock()
-	defer m.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
@@ -1850,8 +1849,8 @@ func (m *Manager) Close() {
 // NodeIDs returns the identifier of each available node. IDs are returned in
 // the same order as they were provided in the creation of the Manager.
 func (m *Manager) NodeIDs() []uint32 {
-	m.Lock()
-	defer m.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	ids := make([]uint32, 0, len(m.nodes))
 	for _, node := range m.nodes {
 		ids = append(ids, node.ID())
@@ -1861,8 +1860,8 @@ func (m *Manager) NodeIDs() []uint32 {
 
 // Node returns the node with the given identifier if present.
 func (m *Manager) Node(id uint32) (node *Node, found bool) {
-	m.Lock()
-	defer m.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	node, found = m.lookup[id]
 	return node, found
 }
@@ -1870,16 +1869,16 @@ func (m *Manager) Node(id uint32) (node *Node, found bool) {
 // Nodes returns a slice of each available node. IDs are returned in the same
 // order as they were provided in the creation of the Manager.
 func (m *Manager) Nodes() []*Node {
-	m.Lock()
-	defer m.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.nodes
 }
 
 // ConfigurationIDs returns the identifier of each available
 // configuration.
 func (m *Manager) ConfigurationIDs() []uint32 {
-	m.Lock()
-	defer m.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	ids := make([]uint32, 0, len(m.configs))
 	for id := range m.configs {
 		ids = append(ids, id)
@@ -1890,16 +1889,16 @@ func (m *Manager) ConfigurationIDs() []uint32 {
 // Configuration returns the configuration with the given global
 // identifier if present.
 func (m *Manager) Configuration(id uint32) (config *Configuration, found bool) {
-	m.Lock()
-	defer m.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	config, found = m.configs[id]
 	return config, found
 }
 
 // Configurations returns a slice of each available configuration.
 func (m *Manager) Configurations() []*Configuration {
-	m.Lock()
-	defer m.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	configs := make([]*Configuration, 0, len(m.configs))
 	for _, conf := range m.configs {
 		configs = append(configs, conf)
@@ -1909,8 +1908,8 @@ func (m *Manager) Configurations() []*Configuration {
 
 // Size returns the number of nodes and configurations in the Manager.
 func (m *Manager) Size() (nodes, configs int) {
-	m.Lock()
-	defer m.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return len(m.nodes), len(m.configs)
 }
 
@@ -1923,8 +1922,8 @@ func (m *Manager) AddNode(addr string) error {
 // NewConfiguration returns a new configuration given quorum specification and
 // a timeout.
 func (m *Manager) NewConfiguration(ids []uint32, qspec QuorumSpec) (*Configuration, error) {
-	m.Lock()
-	defer m.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	if len(ids) == 0 {
 		return nil, IllegalConfigError("need at least one node")
@@ -1959,6 +1958,7 @@ func (m *Manager) NewConfiguration(ids []uint32, qspec QuorumSpec) (*Configurati
 		n:     len(cnodes),
 		mgr:   m,
 		qspec: qspec,
+		errs:  make(chan CallGRPCError, 128),
 	}
 	m.configs[cid] = c
 
@@ -1984,8 +1984,8 @@ func (n *Node) Address() string {
 }
 
 func (n *Node) String() string {
-	n.Lock()
-	defer n.Unlock()
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	return fmt.Sprintf(
 		"node %d | addr: %s | latency: %v",
 		n.id, n.addr, n.latency,
@@ -1993,30 +1993,30 @@ func (n *Node) String() string {
 }
 
 func (n *Node) setLastErr(err error) {
-	n.Lock()
-	defer n.Unlock()
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	n.lastErr = err
 }
 
 // LastErr returns the last error encountered (if any) when invoking a remote
 // procedure call on this node.
 func (n *Node) LastErr() error {
-	n.Lock()
-	defer n.Unlock()
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	return n.lastErr
 }
 
 func (n *Node) setLatency(lat time.Duration) {
-	n.Lock()
-	defer n.Unlock()
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	n.latency = lat
 }
 
 // Latency returns the latency of the last successful remote procedure call
 // made to this node.
 func (n *Node) Latency() time.Duration {
-	n.Lock()
-	defer n.Unlock()
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	return n.latency
 }
 

@@ -130,7 +130,7 @@ import (
 
 // {{.TypeName}} is a reference to a correctable {{.MethodName}} quorum call.
 type {{.TypeName}} struct {
-	sync.Mutex
+	mu sync.Mutex
 	// the actual reply
 	*{{.FQCustomRespName}}
 	NodeIDs  []uint32
@@ -166,8 +166,8 @@ func (c *Configuration) {{.MethodName}}(ctx context.Context, args *{{.FQReqName}
 // reply has yet been received. The Done or Watch methods should be used to
 // ensure that a reply is available.
 func (c *{{.TypeName}}) Get() (*{{.FQCustomRespName}}, int, error) {
-	c.Lock()
-	defer c.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.{{.CustomRespName}}, c.level, c.err
 }
 
@@ -184,24 +184,24 @@ func (c *{{.TypeName}}) Done() <-chan struct{} {
 // disregardless of the specified level.
 func (c *{{.TypeName}}) Watch(level int) <-chan struct{} {
 	ch := make(chan struct{})
-	c.Lock()
+	c.mu.Lock()
 	if level < c.level {
 		close(ch)
-		c.Unlock()
+		c.mu.Unlock()
 		return ch
 	}
 	c.watchers = append(c.watchers, &struct {
 		level int
 		ch    chan struct{}
 	}{level, ch})
-	c.Unlock()
+	c.mu.Unlock()
 	return ch
 }
 
 func (c *{{.TypeName}}) set(reply *{{.FQCustomRespName}}, level int, err error, done bool) {
-	c.Lock()
+	c.mu.Lock()
 	if c.done {
-		c.Unlock()
+		c.mu.Unlock()
 		panic("set(...) called on a done correctable")
 	}
 	c.{{.CustomRespName}}, c.level, c.err, c.done = reply, level, err, done
@@ -212,7 +212,7 @@ func (c *{{.TypeName}}) set(reply *{{.FQCustomRespName}}, level int, err error, 
 				close(watcher.ch)
 			}
 		}
-		c.Unlock()
+		c.mu.Unlock()
 		return
 	}
 	for i := range c.watchers {
@@ -221,7 +221,7 @@ func (c *{{.TypeName}}) set(reply *{{.FQCustomRespName}}, level int, err error, 
 			c.watchers[i] = nil
 		}
 	}
-	c.Unlock()
+	c.mu.Unlock()
 }
 
 /* Unexported types and methods for correctable method {{.MethodName}} */
@@ -307,7 +307,7 @@ import (
 // {{.TypeName}} is a reference to a correctable quorum call
 // with server side preliminary reply support.
 type {{.TypeName}} struct {
-	sync.Mutex
+	mu sync.Mutex
 	// the actual reply
 	*{{.FQCustomRespName}}
 	NodeIDs  []uint32
@@ -343,8 +343,8 @@ func (c *Configuration) {{.MethodName}}(ctx context.Context, args *{{.FQReqName}
 // reply has yet been received. The Done or Watch methods should be used to
 // ensure that a reply is available.
 func (c *{{.TypeName}}) Get() (*{{.FQCustomRespName}}, int, error) {
-	c.Lock()
-	defer c.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.{{.CustomRespName}}, c.level, c.err
 }
 
@@ -361,24 +361,24 @@ func (c *{{.TypeName}}) Done() <-chan struct{} {
 // disregardless of the specified level.
 func (c *{{.TypeName}}) Watch(level int) <-chan struct{} {
 	ch := make(chan struct{})
-	c.Lock()
+	c.mu.Lock()
 	if level < c.level {
 		close(ch)
-		c.Unlock()
+		c.mu.Unlock()
 		return ch
 	}
 	c.watchers = append(c.watchers, &struct {
 		level int
 		ch    chan struct{}
 	}{level, ch})
-	c.Unlock()
+	c.mu.Unlock()
 	return ch
 }
 
 func (c *{{.TypeName}}) set(reply *{{.FQCustomRespName}}, level int, err error, done bool) {
-	c.Lock()
+	c.mu.Lock()
 	if c.done {
-		c.Unlock()
+		c.mu.Unlock()
 		panic("set(...) called on a done correctable")
 	}
 	c.{{.CustomRespName}}, c.level, c.err, c.done = reply, level, err, done
@@ -389,7 +389,7 @@ func (c *{{.TypeName}}) set(reply *{{.FQCustomRespName}}, level int, err error, 
 				close(watcher.ch)
 			}
 		}
-		c.Unlock()
+		c.mu.Unlock()
 		return
 	}
 	for i := range c.watchers {
@@ -398,7 +398,7 @@ func (c *{{.TypeName}}) set(reply *{{.FQCustomRespName}}, level int, err error, 
 			c.watchers[i] = nil
 		}
 	}
-	c.Unlock()
+	c.mu.Unlock()
 }
 
 /* Unexported types and methods for correctable prelim method {{.MethodName}} */
@@ -803,7 +803,7 @@ type Node struct {
 {{end}}
 {{end}}
 
-	sync.Mutex
+	mu sync.Mutex
 	lastErr error
 	latency time.Duration
 }
