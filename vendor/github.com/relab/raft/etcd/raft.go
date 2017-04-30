@@ -28,7 +28,7 @@ type Wrapper struct {
 
 func NewRaft(logger logrus.FieldLogger, storage *etcdraft.MemoryStorage, cfg *etcdraft.Config, peers []etcdraft.Peer) *Wrapper {
 	w := &Wrapper{logger: logger, storage: storage}
-	w.n = etcdraft.StartNode(cfg, peers)
+	w.n = etcdraft.StartNode(cfg, append(peers, etcdraft.Peer{ID: cfg.ID}))
 
 	ss := &stats.ServerStats{}
 	ss.Initialize()
@@ -116,7 +116,10 @@ func (w *Wrapper) run() {
 		case rd := <-w.n.Ready():
 			w.logger.WithField("rd", rd).Warnln("Ready")
 			w.storage.Append(rd.Entries)
-			w.storage.SetHardState(rd.HardState)
+			if !etcdraft.IsEmptyHardState(rd.HardState) {
+				w.logger.WithField("hardstate", rd.HardState).Warnln("HardState")
+				w.storage.SetHardState(rd.HardState)
+			}
 			if !etcdraft.IsEmptySnap(rd.Snapshot) {
 				w.logger.WithField("snapshot", rd.Snapshot).Warnln("Snapshot")
 				w.storage.ApplySnapshot(rd.Snapshot)
@@ -126,10 +129,15 @@ func (w *Wrapper) run() {
 			for _, entry := range rd.CommittedEntries {
 				switch entry.Type {
 				case raftpb.EntryNormal:
-					w.logger.WithField("entry", entry).Warnln("Committed normal entry")
+					w.logger.WithField(
+						"entry", etcdraft.DescribeEntry(entry, nil),
+					).Warnln("Committed normal entry")
 					// process(entry)
 				case raftpb.EntryConfChange:
-					w.logger.WithField("entry", entry).Warnln("Committed conf change entry")
+					w.logger.WithField(
+						"entry", etcdraft.DescribeEntry(entry, nil),
+					).Warnln("Committed conf change entry")
+
 					var cc raftpb.ConfChange
 					err := cc.Unmarshal(entry.Data)
 
