@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,7 +17,9 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	etcdraft "github.com/coreos/etcd/raft"
 	"github.com/relab/raft"
+	etcd "github.com/relab/raft/etcd"
 	"github.com/relab/raft/raftgorums"
 	"github.com/relab/rkv/rkvpb"
 
@@ -24,18 +27,28 @@ import (
 	"google.golang.org/grpc/grpclog"
 )
 
+const (
+	bgorums    = "gorums"
+	betcd      = "etcd"
+	bhashicorp = "hashicorp"
+)
+
+var (
+	bench             = flag.Bool("quiet", false, "Silence log output")
+	recover           = flag.Bool("recover", false, "Recover from stable storage")
+	batch             = flag.Bool("batch", true, "enable batching")
+	electionTimeout   = flag.Duration("election", time.Second, "How long servers wait before starting an election")
+	heartbeatTimeout  = flag.Duration("heartbeat", 20*time.Millisecond, "How often a heartbeat should be sent")
+	entriesPerMsg     = flag.Uint64("entriespermsg", 64, "Entries per Appendentries message")
+	catchupMultiplier = flag.Uint64("catchupmultiplier", 160, "How many more times entries per message allowed during catch up")
+)
+
 func main() {
 	var (
-		id                = flag.Uint64("id", 0, "server ID")
-		servers           = flag.String("servers", ":9201,:9202,:9203,:9204,:9205,:9206,:9207", "comma separated list of server addresses")
-		cluster           = flag.String("cluster", "1,2,3", "comma separated list of server ids to form cluster with, [1 >= id <= len(servers)]")
-		bench             = flag.Bool("quiet", false, "Silence log output")
-		recover           = flag.Bool("recover", false, "Recover from stable storage")
-		batch             = flag.Bool("batch", true, "enable batching")
-		electionTimeout   = flag.Duration("election", time.Second, "How long servers wait before starting an election")
-		heartbeatTimeout  = flag.Duration("heartbeat", 20*time.Millisecond, "How often a heartbeat should be sent")
-		entriesPerMsg     = flag.Uint64("entriespermsg", 64, "Entries per Appendentries message")
-		catchupMultiplier = flag.Uint64("catchupmultiplier", 160, "How many more times entries per message allowed during catch up")
+		id      = flag.Uint64("id", 0, "server ID")
+		servers = flag.String("servers", ":9201,:9202,:9203,:9204,:9205,:9206,:9207", "comma separated list of server addresses")
+		cluster = flag.String("cluster", "1,2,3", "comma separated list of server ids to form cluster with, [1 >= id <= len(servers)]")
+		backend = flag.String("backend", "gorums", "Raft backend to use [gorums|etcd|hashicorp]")
 	)
 
 	flag.Parse()
@@ -120,23 +133,100 @@ func main() {
 
 	grpclog.SetLogger(logger)
 
-	storage, err := raft.NewFileStorage(fmt.Sprintf("db%.2d.bolt", *id), !*recover)
-	storageWithCache := raft.NewCacheStorage(storage, 20000)
-
-	if err != nil {
-		logrus.Fatal(err)
-	}
-
 	lis, err := net.Listen("tcp", nodes[*id-1])
 
 	if err != nil {
-		logrus.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	grpcServer := grpc.NewServer()
 
-	raft := raftgorums.NewRaft(NewStore(), &raftgorums.Config{
-		ID:                *id,
+	switch *backend {
+	case bgorums:
+		rungorums(logger, lis, grpcServer, *id, ids, nodes)
+	case betcd:
+		runetcd(logger, lis, grpcServer, *id, ids, nodes)
+	}
+
+}
+
+func runetcd(logger logrus.FieldLogger, lis net.Listener, grpcServer *grpc.Server, id uint64, ids []uint64, nodes []string) {
+	host, port, err := net.SplitHostPort(nodes[id-1])
+	if err != nil {
+		logger.Fatal(err)
+	}
+	p, _ := strconv.Atoi(port)
+	selflis := host + ":" + strconv.Itoa(p-100)
+
+	ids = append(ids[:id-1], ids[id:]...)
+	nodes = append(nodes[:id-1], nodes[id:]...)
+
+	peers := make([]etcdraft.Peer, len(nodes))
+
+	for i, addr := range nodes {
+		nid := ids[i]
+
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		p, _ := strconv.Atoi(port)
+
+		ur, err := url.Parse("http://" + addr)
+		ur.Host = host + ":" + strconv.Itoa(p-100)
+		if err != nil {
+			logger.Fatal(err)
+		}
+
+		peers[i] = etcdraft.Peer{
+			ID:      nid,
+			Context: []byte(ur.String()),
+		}
+	}
+
+	storage := etcdraft.NewMemoryStorage()
+	node := etcd.NewRaft(
+		logger,
+		storage,
+		&etcdraft.Config{
+			ID:              id,
+			ElectionTick:    10,
+			HeartbeatTick:   1,
+			Storage:         storage,
+			MaxSizePerMsg:   4096,                // TODO Does this mean what we think?
+			MaxInflightMsgs: int(*entriesPerMsg), // TODO Does this mean what we think?
+			Logger:          logger,
+		},
+		peers,
+	)
+
+	service := NewService(node)
+	rkvpb.RegisterRKVServer(grpcServer, service)
+
+	go func() {
+		logrus.Fatal(grpcServer.Serve(lis))
+	}()
+
+	lishttp, err := net.Listen("tcp", selflis)
+
+	if err != nil {
+		logger.Fatal(err)
+	}
+
+	logger.Fatal(http.Serve(lishttp, node.Handler()))
+}
+
+func rungorums(logger logrus.FieldLogger, lis net.Listener, grpcServer *grpc.Server, id uint64, ids []uint64, nodes []string) {
+	storage, err := raft.NewFileStorage(fmt.Sprintf("db%.2d.bolt", id), !*recover)
+
+	if err != nil {
+		logger.Fatal(err)
+	}
+
+	storageWithCache := raft.NewCacheStorage(storage, 20000)
+
+	node := raftgorums.NewRaft(NewStore(), &raftgorums.Config{
+		ID:                id,
 		Servers:           nodes,
 		InitialCluster:    ids,
 		Batch:             *batch,
@@ -149,7 +239,7 @@ func main() {
 		MetricsEnabled:    true,
 	})
 
-	service := NewService(raft)
+	service := NewService(node)
 	rkvpb.RegisterRKVServer(grpcServer, service)
 
 	go func() {
@@ -158,8 +248,8 @@ func main() {
 
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		logrus.Fatal(http.ListenAndServe(":5"+nodes[*id-1][1:], nil))
+		logrus.Fatal(http.ListenAndServe(":5"+nodes[id-1][1:], nil))
 	}()
 
-	logrus.Fatal(raft.Run(grpcServer))
+	logger.Fatal(node.Run(grpcServer))
 }
