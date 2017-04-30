@@ -193,7 +193,7 @@ func runetcd(logger logrus.FieldLogger, lis net.Listener, grpcServer *grpc.Serve
 			ElectionTick:    10,
 			HeartbeatTick:   1,
 			Storage:         storage,
-			MaxSizePerMsg:   4096,                // TODO Does this mean what we think?
+			MaxSizePerMsg:   1024 * 1024,         // TODO Does this mean what we think?
 			MaxInflightMsgs: int(*entriesPerMsg), // TODO Does this mean what we think?
 			Logger:          logger,
 		},
