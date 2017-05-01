@@ -198,6 +198,7 @@ func runetcd(logger logrus.FieldLogger, lis net.Listener, grpcServer *grpc.Serve
 			Logger:          logger,
 		},
 		peers,
+		*heartbeatTimeout,
 	)
 
 	service := NewService(node)
