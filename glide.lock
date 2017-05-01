@@ -1,5 +1,5 @@
 hash: a3029db0b56e4bb2fbf5b4cfc998a58fe74b774da7126454269e51868cdf1fb5
-updated: 2017-05-01T14:24:33.931602366+02:00
+updated: 2017-05-01T22:25:26.004373589+02:00
 imports:
 - name: github.com/beorn7/perks
   version: 4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9
@@ -10,7 +10,7 @@ imports:
 - name: github.com/cenkalti/backoff
   version: 5d150e7eec023ce7a124856b37c68e54b4050ac7
 - name: github.com/coreos/etcd
-  version: f0ca65a95da0806982171b33536815cae7ce0fee
+  version: 3f1f5e5215d08fe85b8e09e7bfe45d86f3117bd4
   subpackages:
   - etcdserver/stats
   - pkg/fileutil
@@ -91,7 +91,7 @@ imports:
   repo: https://github.com/s111/gorums.git
   vcs: git
 - name: github.com/relab/raft
-  version: d738faa982cfd5ef793f47291d197f69d2f3804d
+  version: 59c6dbe5419fcf7f1103186989b5dbac94d52486
   subpackages:
   - commonpb
   - etcd
