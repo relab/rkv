@@ -187,14 +187,15 @@ func runetcd(logger logrus.FieldLogger, lis net.Listener, grpcServer *grpc.Serve
 	storage := etcdraft.NewMemoryStorage()
 	node := etcd.NewRaft(
 		logger,
+		NewStore(),
 		storage,
 		&etcdraft.Config{
 			ID:              id,
 			ElectionTick:    int(*electionTimeout / *heartbeatTimeout),
 			HeartbeatTick:   1,
 			Storage:         storage,
-			MaxSizePerMsg:   1024 * 1024,         // TODO Does this mean what we think?
-			MaxInflightMsgs: int(*entriesPerMsg), // TODO Does this mean what we think?
+			MaxSizePerMsg:   *entriesPerMsg,
+			MaxInflightMsgs: 256,
 			Logger:          logger,
 		},
 		peers,

@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"net/http"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -37,6 +38,7 @@ func (f *future) ResultCh() <-chan raft.Result {
 // etcd/rafthttp.Raft.
 type Wrapper struct {
 	n         etcdraft.Node
+	sm        raft.StateMachine
 	storage   *etcdraft.MemoryStorage
 	transport *rafthttp.Transport
 	logger    logrus.FieldLogger
@@ -44,7 +46,8 @@ type Wrapper struct {
 	heartbeat time.Duration
 
 	uid       uint64
-	proposals map[uint64]*future
+	propLock  sync.RWMutex
+	proposals map[uint64]chan<- raft.Result
 }
 
 func (w *Wrapper) encodeProposal(data []byte) (uint64, []byte, error) {
@@ -64,7 +67,28 @@ func (w *Wrapper) encodeProposal(data []byte) (uint64, []byte, error) {
 	return uid, b.Bytes(), nil
 }
 
-func (w *Wrapper) decodeCommit(commit []byte) (*tag, error) {
+func (w *Wrapper) newFuture(uid uint64) raft.Future {
+	res := make(chan raft.Result, 1)
+	future := &future{res}
+
+	w.propLock.Lock()
+	w.proposals[uid] = res
+	w.propLock.Unlock()
+
+	return future
+}
+
+func (w *Wrapper) deleteFuture(uid uint64) {
+	w.propLock.Lock()
+	delete(w.proposals, uid)
+	w.propLock.Unlock()
+}
+
+// Hack: Returns nil if commit fails to decode. This when etcd append the
+// initial configuration to the log. Fix: Make state machine return
+// clientID/clientSeq along with result, we can then use that to figure out who
+// to respond to instead of using the tag struct.
+func (w *Wrapper) decodeCommit(commit []byte) *tag {
 	b := bytes.NewBuffer(commit)
 	dec := gob.NewDecoder(b)
 
@@ -72,17 +96,21 @@ func (w *Wrapper) decodeCommit(commit []byte) (*tag, error) {
 	err := dec.Decode(&t)
 
 	if err != nil {
-		return nil, err
+		return nil
 	}
 
-	return &t, nil
+	return &t
 }
 
-func NewRaft(logger logrus.FieldLogger, storage *etcdraft.MemoryStorage, cfg *etcdraft.Config, peers []etcdraft.Peer, heartbeat time.Duration) *Wrapper {
+func NewRaft(logger logrus.FieldLogger,
+	sm raft.StateMachine, storage *etcdraft.MemoryStorage, cfg *etcdraft.Config,
+	peers []etcdraft.Peer, heartbeat time.Duration,
+) *Wrapper {
 	w := &Wrapper{
-		heartbeat: heartbeat,
-		proposals: make(map[uint64]*future),
+		sm:        sm,
 		storage:   storage,
+		heartbeat: heartbeat,
+		proposals: make(map[uint64]chan<- raft.Result),
 		logger:    logger,
 	}
 	w.n = etcdraft.StartNode(cfg, append(peers, etcdraft.Peer{ID: cfg.ID}))
@@ -125,17 +153,13 @@ func (w *Wrapper) Handler() http.Handler {
 }
 
 func (w *Wrapper) ProposeCmd(ctx context.Context, req []byte) (raft.Future, error) {
-	w.logger.Warnln("ProposeCmd")
-
 	uid, prop, err := w.encodeProposal(req)
 
 	if err != nil {
 		return nil, err
 	}
 
-	future := &future{make(chan raft.Result, 1)}
-	w.proposals[uid] = future
-
+	future := w.newFuture(uid)
 	err = w.n.Propose(ctx, prop)
 
 	if err != nil {
@@ -181,66 +205,100 @@ func (w *Wrapper) run() {
 		case <-s.C:
 			w.n.Tick()
 		case rd := <-w.n.Ready():
-			w.logger.WithField("rd", rd).Warnln("Ready")
 			w.storage.Append(rd.Entries)
 			if !etcdraft.IsEmptyHardState(rd.HardState) {
-				w.logger.WithField("hardstate", rd.HardState).Warnln("HardState")
 				w.storage.SetHardState(rd.HardState)
 			}
 			if !etcdraft.IsEmptySnap(rd.Snapshot) {
-				w.logger.WithField("snapshot", rd.Snapshot).Warnln("Snapshot")
 				w.storage.ApplySnapshot(rd.Snapshot)
 			}
-			w.logger.WithField("messages", rd.Messages).Warnln("Sending")
 			w.transport.Send(rd.Messages)
 			for _, entry := range rd.CommittedEntries {
-				// TODO Decode tag.
+				t := w.decodeCommit(entry.Data)
 
 				switch entry.Type {
 				case raftpb.EntryNormal:
-					w.logger.WithField(
-						"entry", etcdraft.DescribeEntry(entry, nil),
-					).Warnln("Committed normal entry")
-					// process(entry)
+					w.handleNormal(&entry, t)
 				case raftpb.EntryConfChange:
 					w.logger.WithField(
 						"entry", etcdraft.DescribeEntry(entry, nil),
 					).Warnln("Committed conf change entry")
 
-					var cc raftpb.ConfChange
-					err := cc.Unmarshal(entry.Data)
-
-					if err != nil {
-						panic("unmarshal conf change: " + err.Error())
-					}
-
-					w.logger.WithField("cc", cc).Warnln("Applying conf change")
-					w.n.ApplyConfChange(cc)
-					switch cc.Type {
-					case raftpb.ConfChangeAddNode:
-						if len(cc.Context) > 0 {
-							w.transport.AddPeer(types.ID(cc.NodeID), []string{string(cc.Context)})
-						}
-					case raftpb.ConfChangeRemoveNode:
-						tid := types.ID(cc.NodeID)
-						if tid == w.transport.ID {
-							w.logger.Warnln("Shutting down")
-							return
-						}
-						w.transport.RemovePeer(tid)
-					}
+					w.handleConfChange(&entry, t)
 				}
 
 				// TODO Respond to future.
 			}
-			w.logger.Warnln("Advance")
 			w.n.Advance()
 		}
 	}
 }
 
+func (w *Wrapper) handleNormal(entry *raftpb.Entry, t *tag) {
+	if t == nil {
+		return
+	}
+
+	res := w.sm.Apply(&commonpb.Entry{
+		Term:      entry.Term,
+		Index:     entry.Index,
+		EntryType: commonpb.EntryNormal,
+		Data:      t.Data,
+	})
+
+	w.propLock.RLock()
+	respCh, ok := w.proposals[t.UID]
+	w.propLock.RUnlock()
+
+	if ok {
+		respCh <- raft.Result{
+			Index: entry.Index,
+			Value: res,
+		}
+		w.deleteFuture(t.UID)
+	}
+}
+
+func (w *Wrapper) handleConfChange(entry *raftpb.Entry, t *tag) {
+	var cc raftpb.ConfChange
+	err := cc.Unmarshal(entry.Data)
+
+	if err != nil {
+		panic("unmarshal conf change: " + err.Error())
+	}
+
+	w.logger.WithField("cc", cc).Warnln("Applying conf change")
+	w.n.ApplyConfChange(cc)
+	switch cc.Type {
+	case raftpb.ConfChangeAddNode:
+		if len(cc.Context) > 0 {
+			w.transport.AddPeer(types.ID(cc.NodeID), []string{string(cc.Context)})
+		}
+	case raftpb.ConfChangeRemoveNode:
+		tid := types.ID(cc.NodeID)
+		if tid == w.transport.ID {
+			w.logger.Warnln("Shutting down")
+			return
+		}
+		w.transport.RemovePeer(tid)
+	}
+
+	if t == nil {
+		return
+	}
+
+	// Inform state machine about new configuration.
+	w.sm.Apply(&commonpb.Entry{
+		Term:      entry.Term,
+		Index:     entry.Index,
+		EntryType: commonpb.EntryReconf,
+		Data:      t.Data,
+	})
+
+	// TODO Respond / Cleanup future.
+}
+
 func (w *Wrapper) Process(ctx context.Context, m raftpb.Message) error {
-	w.logger.WithField("m", m).Warnln("Process")
 	return w.n.Step(ctx, m)
 }
 func (w *Wrapper) IsIDRemoved(id uint64) bool                               { return false }
