@@ -190,7 +190,7 @@ func runetcd(logger logrus.FieldLogger, lis net.Listener, grpcServer *grpc.Serve
 		storage,
 		&etcdraft.Config{
 			ID:              id,
-			ElectionTick:    10,
+			ElectionTick:    int(*electionTimeout / *heartbeatTimeout),
 			HeartbeatTick:   1,
 			Storage:         storage,
 			MaxSizePerMsg:   1024 * 1024,         // TODO Does this mean what we think?
