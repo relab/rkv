@@ -86,10 +86,10 @@ func main() {
 
 	wclients.Wait()
 
-	if *forever {
+	go func() {
 		http.Handle("/metrics", promhttp.Handler())
 		logrus.Fatal(http.ListenAndServe(":59100", nil))
-	}
+	}()
 
 	wg.Wait()
 }
