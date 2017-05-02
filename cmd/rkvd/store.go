@@ -194,7 +194,7 @@ func (s *Store) Snapshot() <-chan *commonpb.Snapshot {
 func (s *Store) takeSnapshot(old unsafe.Pointer, term, index uint64, iterKvs, iterSessions *iradix.Iterator) {
 	start := time.Now()
 	defer func() {
-		fmt.Println("Snapshot took:", time.Now().Sub(start))
+		fmt.Println("Snapshot took:", time.Since(start))
 	}()
 
 	var kvs []*rkvpb.KeyValue
