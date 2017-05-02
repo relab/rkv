@@ -186,8 +186,6 @@ func runhashicorp(
 		}
 	}
 
-	fmt.Println(servers)
-
 	addr, err := net.ResolveTCPAddr("tcp", selflis)
 	if err != nil {
 		logger.Fatal(err)
