@@ -40,6 +40,9 @@ func (s *Service) Register(ctx context.Context, req *rkvpb.RegisterRequest) (*rk
 
 	select {
 	case res := <-future.ResultCh():
+		if err, ok := res.Value.(error); ok {
+			return nil, err
+		}
 		return &rkvpb.RegisterResponse{ClientID: res.Value.(uint64)}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -72,7 +75,10 @@ func (s *Service) Insert(ctx context.Context, req *rkvpb.InsertRequest) (*rkvpb.
 	}
 
 	select {
-	case <-future.ResultCh():
+	case res := <-future.ResultCh():
+		if err, ok := res.Value.(error); ok {
+			return nil, err
+		}
 		return &rkvpb.InsertResponse{Ok: true}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -106,6 +112,9 @@ func (s *Service) Lookup(ctx context.Context, req *rkvpb.LookupRequest) (*rkvpb.
 
 	select {
 	case res := <-future.ResultCh():
+		if err, ok := res.Value.(error); ok {
+			return nil, err
+		}
 		return &rkvpb.LookupResponse{Value: res.Value.(string)}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -122,6 +131,9 @@ func (s *Service) Reconf(ctx context.Context, req *commonpb.ReconfRequest) (*com
 
 	select {
 	case res := <-future.ResultCh():
+		if err, ok := res.Value.(error); ok {
+			return nil, err
+		}
 		return res.Value.(*commonpb.ReconfResponse), nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
