@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"math/rand"
 	"net"
 	"net/http"
@@ -18,8 +19,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	etcdraft "github.com/coreos/etcd/raft"
+	hashic "github.com/hashicorp/raft"
+	"github.com/hashicorp/raft-boltdb"
 	"github.com/relab/raft"
 	etcd "github.com/relab/raft/etcd"
+	hraft "github.com/relab/raft/hashicorp"
 	"github.com/relab/raft/raftgorums"
 	"github.com/relab/rkv/rkvpb"
 
@@ -147,20 +151,106 @@ func main() {
 		rungorums(logger, lis, grpcServer, *id, ids, nodes)
 	case betcd:
 		runetcd(logger, lis, grpcServer, *id, ids, nodes)
+	case bhashicorp:
+		runhashicorp(logger, lis, grpcServer, *id, ids, nodes)
 	}
 
 }
 
-func runetcd(logger logrus.FieldLogger, lis net.Listener, grpcServer *grpc.Server, id uint64, ids []uint64, nodes []string) {
-	host, port, err := net.SplitHostPort(nodes[id-1])
+func runhashicorp(
+	logger logrus.FieldLogger,
+	lis net.Listener, grpcServer *grpc.Server,
+	id uint64, ids []uint64, nodes []string,
+) {
+	var selflis string
+	selflis, ids, nodes = selfIDsNodes(logger, id, ids, nodes)
+
+	servers := make([]hashic.Server, len(nodes)+1)
+	servers[0] = hashic.Server{
+		Suffrage: hashic.Voter,
+		ID:       hashic.ServerID(selflis),
+		Address:  hashic.ServerAddress(selflis),
+	}
+	for i, addr := range nodes {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		p, _ := strconv.Atoi(port)
+		addr = host + ":" + strconv.Itoa(p-100)
+
+		servers[i+1] = hashic.Server{
+			Suffrage: hashic.Voter,
+			ID:       hashic.ServerID(addr),
+			Address:  hashic.ServerAddress(addr),
+		}
+	}
+
+	fmt.Println(servers)
+
+	addr, err := net.ResolveTCPAddr("tcp", selflis)
 	if err != nil {
 		logger.Fatal(err)
 	}
-	p, _ := strconv.Atoi(port)
-	selflis := host + ":" + strconv.Itoa(p-100)
+	trans, err := hashic.NewTCPTransport(selflis, addr, len(ids), 10*time.Second, os.Stderr)
+	if err != nil {
+		logger.Fatal(err)
+	}
 
-	ids = append(ids[:id-1], ids[id:]...)
-	nodes = append(nodes[:id-1], nodes[id:]...)
+	path := fmt.Sprintf("hashicorp%.2d.bolt", id)
+	overwrite := !*recover
+	// Check if file already exists.
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			// We don't need to overwrite a file that doesn't exist.
+			overwrite = false
+		} else {
+			// If we are unable to verify the existence of the file,
+			// there is probably a permission problem.
+			logger.Fatal(err)
+		}
+	}
+	if overwrite {
+		if err := os.Remove(path); err != nil {
+			logger.Fatal(err)
+		}
+	}
+	logs, err := raftboltdb.NewBoltStore(path)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
+	snaps := hashic.NewDiscardSnapshotStore()
+
+	cfg := &hashic.Config{
+		LocalID:            hashic.ServerID(selflis),
+		ProtocolVersion:    hashic.ProtocolVersionMax,
+		HeartbeatTimeout:   *electionTimeout,
+		ElectionTimeout:    *electionTimeout,
+		CommitTimeout:      *heartbeatTimeout,
+		MaxAppendEntries:   int(*entriesPerMsg),
+		ShutdownOnRemove:   true,
+		TrailingLogs:       10240,
+		SnapshotInterval:   120 * time.Hour,
+		SnapshotThreshold:  math.MaxUint64,
+		LeaderLeaseTimeout: *electionTimeout / 2,
+	}
+
+	node := hraft.NewRaft(logger, NewStore(), cfg, servers, trans, logs, logs, snaps)
+
+	service := NewService(node)
+	rkvpb.RegisterRKVServer(grpcServer, service)
+
+	logrus.Fatal(grpcServer.Serve(lis))
+}
+
+func runetcd(
+	logger logrus.FieldLogger,
+	lis net.Listener, grpcServer *grpc.Server,
+	id uint64, ids []uint64, nodes []string,
+) {
+	var selflis string
+	selflis, ids, nodes = selfIDsNodes(logger, id, ids, nodes)
 
 	peers := make([]etcdraft.Peer, len(nodes))
 
@@ -221,7 +311,11 @@ func runetcd(logger logrus.FieldLogger, lis net.Listener, grpcServer *grpc.Serve
 	logger.Fatal(http.Serve(lishttp, node.Handler()))
 }
 
-func rungorums(logger logrus.FieldLogger, lis net.Listener, grpcServer *grpc.Server, id uint64, ids []uint64, nodes []string) {
+func rungorums(
+	logger logrus.FieldLogger,
+	lis net.Listener, grpcServer *grpc.Server,
+	id uint64, ids []uint64, nodes []string,
+) {
 	storage, err := raft.NewFileStorage(fmt.Sprintf("db%.2d.bolt", id), !*recover)
 
 	if err != nil {
@@ -259,4 +353,18 @@ func rungorums(logger logrus.FieldLogger, lis net.Listener, grpcServer *grpc.Ser
 	}
 
 	logger.Fatal(node.Run(grpcServer))
+}
+
+func selfIDsNodes(logger logrus.FieldLogger, id uint64, ids []uint64, nodes []string) (string, []uint64, []string) {
+	host, port, err := net.SplitHostPort(nodes[id-1])
+	if err != nil {
+		logger.Fatal(err)
+	}
+	p, _ := strconv.Atoi(port)
+	selflis := host + ":" + strconv.Itoa(p-100)
+
+	ids = append(ids[:id-1], ids[id:]...)
+	nodes = append(nodes[:id-1], nodes[id:]...)
+
+	return selflis, ids, nodes
 }
