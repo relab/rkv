@@ -60,6 +60,8 @@ func main() {
 		zipf := rand.NewZipf(rndsrc, *zipfs, *zipfv, *keyspace)
 		wclients.Add(1)
 		go func() {
+			defer wclients.Done()
+
 			c, err := newClient(&leader, servers, zipf, s)
 
 			if err != nil {
@@ -69,18 +71,20 @@ func main() {
 			switch {
 			case *add > 0:
 				addServer(c, *add)
+				*forever = false
 				return
 			case *remove > 0:
 				removeServer(c, *remove)
+				*forever = false
 				return
 			default:
 				wg.Add(1)
 				go runClient(c, &wg, *throughput, *reads, *forever, *dur, *count)
 			}
-
-			wclients.Done()
 		}()
 	}
+
+	wclients.Wait()
 
 	if *forever {
 		http.Handle("/metrics", promhttp.Handler())
