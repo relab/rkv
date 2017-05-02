@@ -8,6 +8,8 @@ import:
   - gogoproto
   - proto
 - package: github.com/hashicorp/go-immutable-radix
+- package: github.com/hashicorp/raft
+  version: library-v2-stage-one
 - package: github.com/prometheus/client_golang
   version: ~0.8.0
   subpackages:

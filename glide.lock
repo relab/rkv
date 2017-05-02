@@ -1,6 +1,8 @@
-hash: a3029db0b56e4bb2fbf5b4cfc998a58fe74b774da7126454269e51868cdf1fb5
-updated: 2017-05-01T22:25:26.004373589+02:00
+hash: ddb7ca9c089645181b5ef58cbb078ade34b7e486db195fe5b92450f86d726a5f
+updated: 2017-05-02T11:22:26.081433634+02:00
 imports:
+- name: github.com/armon/go-metrics
+  version: 93f237eba9b0602f3e73710416558854a81d9337
 - name: github.com/beorn7/perks
   version: 4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9
   subpackages:
@@ -10,7 +12,7 @@ imports:
 - name: github.com/cenkalti/backoff
   version: 5d150e7eec023ce7a124856b37c68e54b4050ac7
 - name: github.com/coreos/etcd
-  version: 3f1f5e5215d08fe85b8e09e7bfe45d86f3117bd4
+  version: fdf445b5a020f845ea188b43fb6123a95c3bf484
   subpackages:
   - etcdserver/stats
   - pkg/fileutil
@@ -59,10 +61,16 @@ imports:
   - proto
 - name: github.com/hashicorp/go-immutable-radix
   version: 30664b879c9a771d8d50b137ab80ee0748cb2fcc
+- name: github.com/hashicorp/go-msgpack
+  version: fa3f63826f7c23912c15263591e65d54d080b458
+  subpackages:
+  - codec
 - name: github.com/hashicorp/golang-lru
   version: 0a025b7e63adc15a622f29b0b2c4c3848243bbf6
   subpackages:
   - simplelru
+- name: github.com/hashicorp/raft
+  version: 6b063a18bfe6e0da3fdc2b9bf6256be9c0a4849a
 - name: github.com/matttproud/golang_protobuf_extensions
   version: c12348ce28de40eed0136aa2b644d0ee0650e56c
   subpackages:
@@ -91,10 +99,11 @@ imports:
   repo: https://github.com/s111/gorums.git
   vcs: git
 - name: github.com/relab/raft
-  version: 59c6dbe5419fcf7f1103186989b5dbac94d52486
+  version: 548554d340d541574c0e6b82e9edbf46d38eb8d5
   subpackages:
   - commonpb
   - etcd
+  - hashicorp
   - raftgorums
   - raftgorums/gorumspb
   - raftgorums/raftpb
