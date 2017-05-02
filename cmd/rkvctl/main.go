@@ -53,27 +53,33 @@ func main() {
 	servers := strings.Split(*cluster, ",")
 
 	var wg sync.WaitGroup
+	var wclients sync.WaitGroup
 
 	for i := 0; i < *clients; i++ {
 		rndsrc := rand.New(rand.NewSource(seedStart + int64(i)))
 		zipf := rand.NewZipf(rndsrc, *zipfs, *zipfv, *keyspace)
-		c, err := newClient(&leader, servers, zipf, s)
+		wclients.Add(1)
+		go func() {
+			c, err := newClient(&leader, servers, zipf, s)
 
-		if err != nil {
-			logrus.WithError(err).Panicln("Failed to create client")
-		}
+			if err != nil {
+				logrus.WithError(err).Panicln("Failed to create client")
+			}
 
-		switch {
-		case *add > 0:
-			addServer(c, *add)
-			return
-		case *remove > 0:
-			removeServer(c, *remove)
-			return
-		default:
-			wg.Add(1)
-			go runClient(c, &wg, *throughput, *reads, *forever, *dur, *count)
-		}
+			switch {
+			case *add > 0:
+				addServer(c, *add)
+				return
+			case *remove > 0:
+				removeServer(c, *remove)
+				return
+			default:
+				wg.Add(1)
+				go runClient(c, &wg, *throughput, *reads, *forever, *dur, *count)
+			}
+
+			wclients.Done()
+		}()
 	}
 
 	if *forever {
