@@ -1,0 +1,72 @@
+- name: Stage instances
+  hosts: local
+  connection: local
+  remote_user: ec2-user
+  gather_facts: false
+
+  vars:
+      keypair: red
+      instance_type: c4.xlarge
+      security_group: UIS
+      region: us-east-1
+      image: ami-c58c1dd3
+
+  tasks:
+    - name: Launch instance
+      ec2: keypair="{{keypair}}" group="{{security_group}}"
+           region="{{region}}" zone="{{item.zone}}"
+           instance_type="{{instance_type}}" image="{{image}}"
+           count=1 wait=true
+      register: ec2
+      with_items:
+        - { zone: us-east-1a }
+        - { zone: us-east-1b }
+        - { zone: us-east-1c }
+        - { zone: us-east-1d }
+        - { zone: us-east-1e }
+
+    - name: Add new instances to host group
+      add_host: hostname="{{item.instances[0].public_ip}}" groupname=deploy
+      with_items: "{{ec2.results}}"
+
+    - name: Wait for the instances to boot by checking the ssh port
+      wait_for: host="{{item.instances[0].public_dns_name}}" port=22 delay=10 timeout=320 state=started
+      with_items: "{{ec2.results}}"
+
+
+- name: Configure instances
+  hosts: deploy
+  remote_user: ec2-user
+
+  tasks:
+    - name: Install packages
+      become: true
+      yum:
+        name: "{{item}}"
+        state: latest
+      with_items:
+        - git
+        - htop
+
+    - name: Copy script
+      copy:
+        src: script.go
+        dest: ~/script.go
+
+    - name: Install
+      shell:
+        cmd: |
+          cd $HOME
+          mkdir go inmem
+          curl -O "https://storage.googleapis.com/golang/go1.8.1.linux-amd64.tar.gz"
+          sudo tar -C /usr/local -xzf go1.8.1.linux-amd64.tar.gz
+          cat >> .bashrc <<EOF
+          export PATH=$PATH:/usr/local/go/bin:~/go/bin
+          EOF
+          source ~/.bashrc
+          go get github.com/s111/rkv
+          mv ~/go/src/github.com/s111 ~/go/src/github.com/relab
+          go install github.com/relab/rkv/cmd/rkvd
+          sudo mount -t tmpfs -o size=4G tmpfs ~/inmem
+          echo "{{hostvars['localhost']['ec2']}}" > ~/ec2.txt
+          go run script.go
