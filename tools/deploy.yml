@@ -33,7 +33,6 @@
       wait_for: host="{{item.instances[0].public_dns_name}}" port=22 delay=10 timeout=320 state=started
       with_items: "{{ec2.results}}"
 
-
 - name: Configure instances
   hosts: deploy
   remote_user: ec2-user
@@ -69,4 +68,5 @@
           go install github.com/relab/rkv/cmd/rkvd
           sudo mount -t tmpfs -o size=4G tmpfs ~/inmem
           echo "{{hostvars['localhost']['ec2']}}" > ~/ec2.txt
+          cat ~/ec2.txt | python -c "import sys,json;a=eval(sys.stdin.read());print(json.dumps(a))" | tee ~/ec2.txt
           go run script.go
