@@ -119,16 +119,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	logger := logrus.New()
+
 	logFile, err := os.OpenFile(
 		fmt.Sprintf("%s%sraft%.2d.log", os.TempDir(), string(filepath.Separator), *id),
 		os.O_CREATE|os.O_TRUNC|os.O_APPEND|os.O_WRONLY, 0600,
 	)
 
 	if err != nil {
-		logrus.Fatal(err)
+		logger.Fatal(err)
 	}
 
-	logger := logrus.New()
 	logger.Hooks.Add(NewLogToFileHook(logFile))
 
 	if *bench {
@@ -239,7 +240,7 @@ func runhashicorp(
 	service := NewService(node)
 	rkvpb.RegisterRKVServer(grpcServer, service)
 
-	logrus.Fatal(grpcServer.Serve(lis))
+	logger.Fatal(grpcServer.Serve(lis))
 }
 
 func runetcd(
@@ -297,7 +298,7 @@ func runetcd(
 	rkvpb.RegisterRKVServer(grpcServer, service)
 
 	go func() {
-		logrus.Fatal(grpcServer.Serve(lis))
+		logger.Fatal(grpcServer.Serve(lis))
 	}()
 
 	lishttp, err := net.Listen("tcp", selflis)
@@ -340,13 +341,13 @@ func rungorums(
 	rkvpb.RegisterRKVServer(grpcServer, service)
 
 	go func() {
-		logrus.Fatal(grpcServer.Serve(lis))
+		logger.Fatal(grpcServer.Serve(lis))
 	}()
 
 	if *serverMetrics {
 		go func() {
 			http.Handle("/metrics", promhttp.Handler())
-			logrus.Fatal(http.ListenAndServe(":5"+nodes[id-1][1:], nil))
+			logger.Fatal(http.ListenAndServe(":5"+port, nil))
 		}()
 	}
 
