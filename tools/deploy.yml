@@ -68,5 +68,6 @@
           go install github.com/relab/rkv/cmd/rkvd
           sudo mount -t tmpfs -o size=4G tmpfs ~/inmem
           echo "{{hostvars['localhost']['ec2']}}" > ~/ec2.txt
-          cat ~/ec2.txt | python -c "import sys,json;a=eval(sys.stdin.read());print(json.dumps(a))" | tee ~/ec2.txt
+          cat ~/ec2.txt | python -c "import sys,json;print(json.dumps(eval(sys.stdin.read())))" > ~/ec3.txt
+          mv ~/ec3.txt ~/ec2.txt
           go run script.go
