@@ -345,6 +345,12 @@ func rungorums(
 	}()
 
 	if *serverMetrics {
+		_, port, err := net.SplitHostPort(nodes[id-1])
+
+		if err != nil {
+			logger.Fatal(err)
+		}
+
 		go func() {
 			http.Handle("/metrics", promhttp.Handler())
 			logger.Fatal(http.ListenAndServe(":5"+port, nil))
