@@ -1,5 +1,5 @@
 hash: ddb7ca9c089645181b5ef58cbb078ade34b7e486db195fe5b92450f86d726a5f
-updated: 2017-05-02T17:14:36.61618671+02:00
+updated: 2017-05-06T12:29:52.668343534+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 93f237eba9b0602f3e73710416558854a81d9337
@@ -12,7 +12,7 @@ imports:
 - name: github.com/cenkalti/backoff
   version: 5d150e7eec023ce7a124856b37c68e54b4050ac7
 - name: github.com/coreos/etcd
-  version: fdf445b5a020f845ea188b43fb6123a95c3bf484
+  version: af7d0510190f2de70e2ef7d9a2fd5bf7bc89b917
   subpackages:
   - etcdserver/stats
   - pkg/fileutil
@@ -44,7 +44,7 @@ imports:
   subpackages:
   - capnslog
 - name: github.com/go-kit/kit
-  version: 8a2988aa81f699fc1e647c3c9dddce0113ef1bfb
+  version: 0873e56b0faeae3a1d661b10d629135508ea5504
   subpackages:
   - metrics
   - metrics/internal/lv
@@ -70,7 +70,7 @@ imports:
   subpackages:
   - simplelru
 - name: github.com/hashicorp/raft
-  version: 6b063a18bfe6e0da3fdc2b9bf6256be9c0a4849a
+  version: 939ebd2103731c2f38c7964d8dd24af0e1b26dc3
 - name: github.com/hashicorp/raft-boltdb
   version: df631556b57507bd5d0ed4f87468fd93ab025bef
 - name: github.com/matttproud/golang_protobuf_extensions
@@ -101,7 +101,7 @@ imports:
   repo: https://github.com/s111/gorums.git
   vcs: git
 - name: github.com/relab/raft
-  version: 4e0fd4a6569a9487a05b38a014aaf7ed96e4b2a1
+  version: 2b5db6e62cc707d803b3921f1b56208a73815066
   subpackages:
   - commonpb
   - etcd
