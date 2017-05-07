@@ -219,7 +219,7 @@ func runhashicorp(
 		logger.Fatal(err)
 	}
 
-	snaps := hashic.NewDiscardSnapshotStore()
+	snaps := hashic.NewInmemSnapshotStore()
 
 	cfg := &hashic.Config{
 		LocalID:            hashic.ServerID(selflis),
@@ -229,7 +229,7 @@ func runhashicorp(
 		CommitTimeout:      *heartbeatTimeout,
 		MaxAppendEntries:   int(*entriesPerMsg),
 		ShutdownOnRemove:   true,
-		TrailingLogs:       10240,
+		TrailingLogs:       math.MaxUint64,
 		SnapshotInterval:   120 * time.Hour,
 		SnapshotThreshold:  math.MaxUint64,
 		LeaderLeaseTimeout: *electionTimeout / 2,
