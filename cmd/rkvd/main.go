@@ -240,6 +240,19 @@ func runhashicorp(
 	service := NewService(node)
 	rkvpb.RegisterRKVServer(grpcServer, service)
 
+	if *serverMetrics {
+		_, port, err := net.SplitHostPort(selflis)
+
+		if err != nil {
+			logger.Fatal(err)
+		}
+
+		go func() {
+			http.Handle("/metrics", promhttp.Handler())
+			logger.Fatal(http.ListenAndServe(":5"+port, nil))
+		}()
+	}
+
 	logger.Fatal(grpcServer.Serve(lis))
 }
 
@@ -300,6 +313,19 @@ func runetcd(
 	go func() {
 		logger.Fatal(grpcServer.Serve(lis))
 	}()
+
+	if *serverMetrics {
+		_, port, err := net.SplitHostPort(selflis)
+
+		if err != nil {
+			logger.Fatal(err)
+		}
+
+		go func() {
+			http.Handle("/metrics", promhttp.Handler())
+			logger.Fatal(http.ListenAndServe(":5"+port, nil))
+		}()
+	}
 
 	lishttp, err := net.Listen("tcp", selflis)
 
