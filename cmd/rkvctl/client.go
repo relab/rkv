@@ -115,13 +115,14 @@ func (c *client) reconf(serverID uint64, reconfType commonpb.ReconfType) (*commo
 
 	op := func() error {
 		var err error
-		res, err = c.leader().Reconf(ctx, &commonpb.ReconfRequest{
+		prevLeader := c.getLeader()
+		res, err = c.servers[prevLeader].Reconf(ctx, &commonpb.ReconfRequest{
 			ServerID:   serverID,
 			ReconfType: reconfType,
 		})
 
 		if err != nil {
-			c.nextLeader()
+			c.nextLeader(prevLeader)
 			return err
 		}
 
@@ -152,10 +153,11 @@ func (c *client) register() (*rkvpb.RegisterResponse, error) {
 
 	op := func() error {
 		var err error
-		res, err = c.leader().Register(ctx, &rkvpb.RegisterRequest{})
+		prevLeader := c.getLeader()
+		res, err = c.servers[prevLeader].Register(ctx, &rkvpb.RegisterRequest{})
 
 		if err != nil {
-			c.nextLeader()
+			c.nextLeader(prevLeader)
 			return err
 		}
 
@@ -193,10 +195,11 @@ func (c *client) lookup() (*rkvpb.LookupResponse, error) {
 
 	op := func() error {
 		var err error
-		res, err = c.leader().Lookup(ctx, req)
+		prevLeader := c.getLeader()
+		res, err = c.servers[prevLeader].Lookup(ctx, req)
 
 		if err != nil {
-			c.nextLeader()
+			c.nextLeader(prevLeader)
 			return err
 		}
 
@@ -236,10 +239,11 @@ func (c *client) insert() (*rkvpb.InsertResponse, error) {
 
 	op := func() error {
 		var err error
-		res, err = c.leader().Insert(ctx, req)
+		prevLeader := c.getLeader()
+		res, err = c.servers[prevLeader].Insert(ctx, req)
 
 		if err != nil {
-			c.nextLeader()
+			c.nextLeader(prevLeader)
 			return err
 		}
 
@@ -253,13 +257,9 @@ func (c *client) insert() (*rkvpb.InsertResponse, error) {
 	return res, err
 }
 
-func (c *client) leader() rkvpb.RKVClient {
-	return c.servers[c.getLeader()]
-}
-
-func (c *client) nextLeader() {
-	newLeader := (c.currentLeader + 1) % uint64(len(c.servers))
-	atomic.CompareAndSwapUint64(c.l, c.currentLeader, newLeader)
+func (c *client) nextLeader(prevLeader uint64) {
+	newLeader := (prevLeader + 1) % uint64(len(c.servers))
+	atomic.CompareAndSwapUint64(c.l, prevLeader, newLeader)
 }
 
 func (c *client) getLeader() uint64 {
