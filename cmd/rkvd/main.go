@@ -301,6 +301,7 @@ func runetcd(
 			// etcdserver says: Never overflow the rafthttp buffer,
 			// which is 4096. We keep the same constant.
 			MaxInflightMsgs: 4096 / 8,
+			PreVote:         true,
 			Logger:          logger,
 		},
 		peers,
