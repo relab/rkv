@@ -147,6 +147,13 @@ func main() {
 
 	grpcServer := grpc.NewServer()
 
+	if *serverMetrics {
+		go func() {
+			http.Handle("/metrics", promhttp.Handler())
+			logger.Fatal(http.ListenAndServe(fmt.Sprintf(":590%d", *id), nil))
+		}()
+	}
+
 	switch *backend {
 	case bgorums:
 		rungorums(logger, lis, grpcServer, *id, ids, nodes)
@@ -240,19 +247,6 @@ func runhashicorp(
 	service := NewService(node)
 	rkvpb.RegisterRKVServer(grpcServer, service)
 
-	if *serverMetrics {
-		_, port, err := net.SplitHostPort(selflis)
-
-		if err != nil {
-			logger.Fatal(err)
-		}
-
-		go func() {
-			http.Handle("/metrics", promhttp.Handler())
-			logger.Fatal(http.ListenAndServe(":5"+port, nil))
-		}()
-	}
-
 	logger.Fatal(grpcServer.Serve(lis))
 }
 
@@ -315,19 +309,6 @@ func runetcd(
 		logger.Fatal(grpcServer.Serve(lis))
 	}()
 
-	if *serverMetrics {
-		_, port, err := net.SplitHostPort(selflis)
-
-		if err != nil {
-			logger.Fatal(err)
-		}
-
-		go func() {
-			http.Handle("/metrics", promhttp.Handler())
-			logger.Fatal(http.ListenAndServe(":5"+port, nil))
-		}()
-	}
-
 	lishttp, err := net.Listen("tcp", selflis)
 
 	if err != nil {
@@ -370,19 +351,6 @@ func rungorums(
 	go func() {
 		logger.Fatal(grpcServer.Serve(lis))
 	}()
-
-	if *serverMetrics {
-		_, port, err := net.SplitHostPort(nodes[id-1])
-
-		if err != nil {
-			logger.Fatal(err)
-		}
-
-		go func() {
-			http.Handle("/metrics", promhttp.Handler())
-			logger.Fatal(http.ListenAndServe(":5"+port, nil))
-		}()
-	}
 
 	logger.Fatal(node.Run(grpcServer))
 }
