@@ -82,7 +82,7 @@ func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats, payl
 
 const (
 	requestTimeout = 10 * time.Minute
-	maxInFlight    = 15000
+	maxInFlight    = 50000
 )
 
 func newBackOff() *backoff.ExponentialBackOff {
