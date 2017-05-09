@@ -6,6 +6,6 @@ global:
 
 scrape_configs:
   - job_name: 'raft'
-    scrape_interval: 5s
+    scrape_interval: 1s
     static_configs:
       - targets: ['localhost:59100', 'localhost:59201', 'localhost:59202', 'localhost:59203', 'localhost:59204', 'localhost:59205']
