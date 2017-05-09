@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math/rand"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,8 @@ type client struct {
 	zipf *z
 
 	s *stats
+
+	payload int
 }
 
 // z wraps rand.Zipf with a mutex.
@@ -44,7 +47,7 @@ func (zz *z) Uint64() uint64 {
 	return i
 }
 
-func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats) (*client, error) {
+func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats, payload int) (*client, error) {
 	conns := make([]rkvpb.RKVClient, len(servers))
 
 	for i, server := range servers {
@@ -62,6 +65,7 @@ func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats) (*cl
 		servers: conns,
 		zipf:    &z{Zipf: zipf},
 		s:       s,
+		payload: payload,
 	}
 
 	res, err := c.register()
@@ -190,7 +194,7 @@ func (c *client) lookup() (*rkvpb.LookupResponse, error) {
 	var res *rkvpb.LookupResponse
 
 	req := &rkvpb.LookupRequest{
-		Key: strconv.FormatUint(c.zipf.Uint64(), 10),
+		Key: c.randPayload(),
 	}
 
 	op := func() error {
@@ -233,8 +237,8 @@ func (c *client) insert() (*rkvpb.InsertResponse, error) {
 	req := &rkvpb.InsertRequest{
 		ClientID:  c.id,
 		ClientSeq: atomic.AddUint64(&c.seq, 1),
-		Key:       strconv.FormatUint(c.zipf.Uint64(), 10),
-		Value:     strconv.FormatUint(c.zipf.Uint64(), 10),
+		Key:       c.randPayload(),
+		Value:     c.randPayload(),
 	}
 
 	op := func() error {
@@ -265,4 +269,8 @@ func (c *client) nextLeader(prevLeader uint64) {
 func (c *client) getLeader() uint64 {
 	c.currentLeader = atomic.LoadUint64(c.l)
 	return c.currentLeader
+}
+
+func (c *client) randPayload() string {
+	return strconv.FormatUint(c.zipf.Uint64(), 10) + strings.Repeat("X", c.payload)
 }

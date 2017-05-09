@@ -34,8 +34,14 @@ func main() {
 		keyspace = flag.Uint64("keyspace", 10000, "number of keys to touch")
 		zipfs    = flag.Float64("zipfs", 1.1, "zipf s parameter")
 		zipfv    = flag.Float64("zipfv", 4, "zipf v parameter")
+
+		payload = flag.Int("payload", 16, "payload in bytes")
 	)
 	flag.Parse()
+
+	if *payload < 16 {
+		panic("payload must be at least 16")
+	}
 
 	if *add > 0 && *remove > 0 {
 		panic("can only do one reconfiguration at the time")
@@ -62,7 +68,7 @@ func main() {
 		go func() {
 			defer wclients.Done()
 
-			c, err := newClient(&leader, servers, zipf, s)
+			c, err := newClient(&leader, servers, zipf, s, (*payload-16)/2)
 
 			if err != nil {
 				logrus.WithError(err).Panicln("Failed to create client")
