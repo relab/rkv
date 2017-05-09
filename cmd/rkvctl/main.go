@@ -2,8 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"math/rand"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"time"
@@ -61,6 +64,22 @@ func main() {
 	var wg sync.WaitGroup
 	var wclients sync.WaitGroup
 
+	lat := newLatency()
+
+	var once sync.Once
+	writeLatencies := func() { lat.write(fmt.Sprintf("./latency-%v.csv", time.Now().UnixNano())) }
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		<-c
+		once.Do(writeLatencies)
+		os.Exit(1)
+	}()
+	defer func() {
+		once.Do(writeLatencies)
+	}()
+
 	for i := 0; i < *clients; i++ {
 		rndsrc := rand.New(rand.NewSource(seedStart + int64(i)))
 		zipf := rand.NewZipf(rndsrc, *zipfs, *zipfv, *keyspace)
@@ -68,7 +87,7 @@ func main() {
 		go func() {
 			defer wclients.Done()
 
-			c, err := newClient(&leader, servers, zipf, s, (*payload-16)/2)
+			c, err := newClient(&leader, servers, zipf, s, (*payload-16)/2, lat)
 
 			if err != nil {
 				logrus.WithError(err).Panicln("Failed to create client")
