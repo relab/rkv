@@ -1,5 +1,5 @@
 hash: ddb7ca9c089645181b5ef58cbb078ade34b7e486db195fe5b92450f86d726a5f
-updated: 2017-05-07T14:13:55.725461304+02:00
+updated: 2017-05-09T14:16:57.094623791+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 93f237eba9b0602f3e73710416558854a81d9337
@@ -12,7 +12,7 @@ imports:
 - name: github.com/cenkalti/backoff
   version: 5d150e7eec023ce7a124856b37c68e54b4050ac7
 - name: github.com/coreos/etcd
-  version: af7d0510190f2de70e2ef7d9a2fd5bf7bc89b917
+  version: aac2292ab5fd3a34a40b859f5d9513c4663262ad
   subpackages:
   - etcdserver/stats
   - pkg/fileutil
@@ -101,7 +101,7 @@ imports:
   repo: https://github.com/s111/gorums.git
   vcs: git
 - name: github.com/relab/raft
-  version: c2e80804f7179027b2c7d974da1f4770c1246ff8
+  version: b07f559386aad679719524f0c0dce2a805e9f3b1
   subpackages:
   - commonpb
   - etcd
