@@ -1,5 +1,5 @@
 hash: ddb7ca9c089645181b5ef58cbb078ade34b7e486db195fe5b92450f86d726a5f
-updated: 2017-05-09T14:16:57.094623791+02:00
+updated: 2017-05-10T13:24:48.677795444+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 93f237eba9b0602f3e73710416558854a81d9337
@@ -12,7 +12,7 @@ imports:
 - name: github.com/cenkalti/backoff
   version: 5d150e7eec023ce7a124856b37c68e54b4050ac7
 - name: github.com/coreos/etcd
-  version: aac2292ab5fd3a34a40b859f5d9513c4663262ad
+  version: 47f5b7c3add605229555fe05fffc513312cb7ee5
   subpackages:
   - etcdserver/stats
   - pkg/fileutil
@@ -44,7 +44,7 @@ imports:
   subpackages:
   - capnslog
 - name: github.com/go-kit/kit
-  version: 3df66f47685c422e76fe68829732773dcfb9c55d
+  version: d67bb4c202e3b91377d1079b110a6c9ce23ab2f8
   subpackages:
   - metrics
   - metrics/internal/lv
@@ -56,7 +56,7 @@ imports:
   - proto
   - protoc-gen-gogo/descriptor
 - name: github.com/golang/protobuf
-  version: 18c9bb3261723cd5401db4d0c9fbc5c3b6c70fe8
+  version: b50ceb1fa9818fa4d78b016c2d4ae025593a7ce3
   subpackages:
   - proto
 - name: github.com/hashicorp/go-immutable-radix
@@ -101,7 +101,7 @@ imports:
   repo: https://github.com/s111/gorums.git
   vcs: git
 - name: github.com/relab/raft
-  version: b07f559386aad679719524f0c0dce2a805e9f3b1
+  version: fde242a825fc686cba33cc5ef69e56200d9a6867
   subpackages:
   - commonpb
   - etcd
