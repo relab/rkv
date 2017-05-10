@@ -274,7 +274,20 @@ func NewServer(cfg *ServerConfig) (srv *EtcdServer, err error) {
 	bepath := filepath.Join(cfg.SnapDir(), databaseFilename)
 	beExist := fileutil.Exist(bepath)
 
-	be := openBackend(bepath, cfg.QuotaBackendBytes)
+	var be backend.Backend
+	beOpened := make(chan struct{})
+	go func() {
+		be = newBackend(bepath, cfg.QuotaBackendBytes)
+		beOpened <- struct{}{}
+	}()
+
+	select {
+	case <-beOpened:
+	case <-time.After(time.Second):
+		plog.Warningf("another etcd process is running with the same data dir and holding the file lock.")
+		plog.Warningf("waiting for it to exit before starting...")
+		<-beOpened
+	}
 
 	defer func() {
 		if err != nil {
@@ -372,11 +385,6 @@ func NewServer(cfg *ServerConfig) (srv *EtcdServer, err error) {
 				plog.Panicf("recovered store from snapshot error: %v", err)
 			}
 			plog.Infof("recovered store from snapshot at index %d", snapshot.Metadata.Index)
-
-			be, err = checkAndRecoverDB(snapshot, be, cfg.QuotaBackendBytes, cfg.SnapDir())
-			if err != nil {
-				plog.Panicf("recovering backend from snapshot error: %v", err)
-			}
 		}
 		cfg.Print()
 		if !cfg.ForceNewCluster {
@@ -770,7 +778,7 @@ func (s *EtcdServer) applyAll(ep *etcdProgress, apply *apply) {
 	// wait for the raft routine to finish the disk writes before triggering a
 	// snapshot. or applied index might be greater than the last index in raft
 	// storage, since the raft routine might be slower than apply routine.
-	<-apply.notifyc
+	<-apply.raftDone
 
 	s.triggerSnapshot(ep)
 	select {
@@ -794,9 +802,6 @@ func (s *EtcdServer) applySnapshot(ep *etcdProgress, apply *apply) {
 		plog.Panicf("snapshot index [%d] should > appliedi[%d] + 1",
 			apply.snapshot.Metadata.Index, ep.appliedi)
 	}
-
-	// wait for raftNode to persist snashot onto the disk
-	<-apply.notifyc
 
 	snapfn, err := s.r.storage.DBFilePath(apply.snapshot.Metadata.Index)
 	if err != nil {
@@ -1267,14 +1272,9 @@ func (s *EtcdServer) apply(es []raftpb.Entry, confState *raftpb.ConfState) (appl
 		case raftpb.EntryNormal:
 			s.applyEntryNormal(&e)
 		case raftpb.EntryConfChange:
-			// set the consistent index of current executing entry
-			if e.Index > s.consistIndex.ConsistentIndex() {
-				s.consistIndex.setConsistentIndex(e.Index)
-			}
 			var cc raftpb.ConfChange
 			pbutil.MustUnmarshal(&cc, e.Data)
 			removedSelf, err := s.applyConfChange(cc, confState)
-			s.setAppliedIndex(e.Index)
 			shouldStop = shouldStop || removedSelf
 			s.w.Trigger(cc.ID, &confChangeResponse{s.cluster.Members(), err})
 		default:

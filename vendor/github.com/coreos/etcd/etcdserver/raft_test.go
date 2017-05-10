@@ -211,7 +211,7 @@ func TestConfgChangeBlocksApply(t *testing.T) {
 	}
 
 	// finish apply, unblock raft routine
-	<-ap.notifyc
+	<-ap.raftDone
 
 	select {
 	case <-continueC:

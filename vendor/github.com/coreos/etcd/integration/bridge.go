@@ -119,7 +119,6 @@ func (b *bridge) serveListen() {
 		b.mu.Unlock()
 		select {
 		case <-b.stopc:
-			inc.Close()
 			return
 		case <-pausec:
 		}
@@ -153,12 +152,10 @@ func (b *bridge) serveConn(bc *bridgeConn) {
 	wg.Add(2)
 	go func() {
 		io.Copy(bc.out, bc.in)
-		bc.close()
 		wg.Done()
 	}()
 	go func() {
 		io.Copy(bc.in, bc.out)
-		bc.close()
 		wg.Done()
 	}()
 	wg.Wait()
@@ -171,11 +168,7 @@ type bridgeConn struct {
 }
 
 func (bc *bridgeConn) Close() {
-	bc.close()
-	<-bc.donec
-}
-
-func (bc *bridgeConn) close() {
 	bc.in.Close()
 	bc.out.Close()
+	<-bc.donec
 }

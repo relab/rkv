@@ -106,9 +106,8 @@ func startGRPCProxy(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	srvs := discoverEndpoints(grpcProxyDNSCluster, grpcProxyCA, grpcProxyInsecureDiscovery)
-	if len(srvs.Endpoints) != 0 {
-		grpcProxyEndpoints = srvs.Endpoints
+	if eps := discoverEndpoints(grpcProxyDNSCluster, grpcProxyCA, grpcProxyInsecureDiscovery); len(eps) != 0 {
+		grpcProxyEndpoints = eps
 	}
 
 	l, err := net.Listen("tcp", grpcProxyListenAddr)

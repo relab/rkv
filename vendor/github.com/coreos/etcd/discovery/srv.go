@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package srv
+package discovery
 
 import (
 	"fmt"
@@ -25,13 +25,14 @@ import (
 
 var (
 	// indirection for testing
-	lookupSRV      = net.LookupSRV // net.DefaultResolver.LookupSRV when ctxs don't conflict
+	lookupSRV      = net.LookupSRV
 	resolveTCPAddr = net.ResolveTCPAddr
 )
 
-// GetCluster gets the cluster information via DNS discovery.
+// SRVGetCluster gets the cluster information via DNS discovery.
+// TODO(barakmich): Currently ignores priority and weight (as they don't make as much sense for a bootstrap)
 // Also sees each entry as a separate instance.
-func GetCluster(service, name, dns string, apurls types.URLs) ([]string, error) {
+func SRVGetCluster(name, dns string, apurls types.URLs) (string, error) {
 	tempName := int(0)
 	tcp2ap := make(map[string]url.URL)
 
@@ -39,7 +40,8 @@ func GetCluster(service, name, dns string, apurls types.URLs) ([]string, error) 
 	for _, url := range apurls {
 		tcpAddr, err := resolveTCPAddr("tcp", url.Host)
 		if err != nil {
-			return nil, err
+			plog.Errorf("couldn't resolve host %s during SRV discovery", url.Host)
+			return "", err
 		}
 		tcp2ap[tcpAddr.String()] = url
 	}
@@ -53,9 +55,9 @@ func GetCluster(service, name, dns string, apurls types.URLs) ([]string, error) 
 		for _, srv := range addrs {
 			port := fmt.Sprintf("%d", srv.Port)
 			host := net.JoinHostPort(srv.Target, port)
-			tcpAddr, terr := resolveTCPAddr("tcp", host)
-			if terr != nil {
-				terr = err
+			tcpAddr, err := resolveTCPAddr("tcp", host)
+			if err != nil {
+				plog.Warningf("couldn't resolve host %s during SRV discovery", host)
 				continue
 			}
 			n := ""
@@ -71,69 +73,31 @@ func GetCluster(service, name, dns string, apurls types.URLs) ([]string, error) 
 			shortHost := strings.TrimSuffix(srv.Target, ".")
 			urlHost := net.JoinHostPort(shortHost, port)
 			stringParts = append(stringParts, fmt.Sprintf("%s=%s://%s", n, scheme, urlHost))
+			plog.Noticef("got bootstrap from DNS for %s at %s://%s", service, scheme, urlHost)
 			if ok && url.Scheme != scheme {
-				err = fmt.Errorf("bootstrap at %s from DNS for %s has scheme mismatch with expected peer %s", scheme+"://"+urlHost, service, url.String())
+				plog.Errorf("bootstrap at %s from DNS for %s has scheme mismatch with expected peer %s", scheme+"://"+urlHost, service, url.String())
 			}
-		}
-		if len(stringParts) == 0 {
-			return err
 		}
 		return nil
 	}
 
 	failCount := 0
-	err := updateNodeMap(service+"-ssl", "https")
+	err := updateNodeMap("etcd-server-ssl", "https")
 	srvErr := make([]string, 2)
 	if err != nil {
-		srvErr[0] = fmt.Sprintf("error querying DNS SRV records for _%s-ssl %s", service, err)
+		srvErr[0] = fmt.Sprintf("error querying DNS SRV records for _etcd-server-ssl %s", err)
 		failCount++
 	}
-	err = updateNodeMap(service, "http")
+	err = updateNodeMap("etcd-server", "http")
 	if err != nil {
-		srvErr[1] = fmt.Sprintf("error querying DNS SRV records for _%s %s", service, err)
+		srvErr[1] = fmt.Sprintf("error querying DNS SRV records for _etcd-server %s", err)
 		failCount++
 	}
 	if failCount == 2 {
-		return nil, fmt.Errorf("srv: too many errors querying DNS SRV records (%q, %q)", srvErr[0], srvErr[1])
+		plog.Warningf(srvErr[0])
+		plog.Warningf(srvErr[1])
+		plog.Errorf("SRV discovery failed: too many errors querying DNS SRV records")
+		return "", err
 	}
-	return stringParts, nil
-}
-
-type SRVClients struct {
-	Endpoints []string
-	SRVs      []*net.SRV
-}
-
-// GetClient looks up the client endpoints for a service and domain.
-func GetClient(service, domain string) (*SRVClients, error) {
-	var urls []*url.URL
-	var srvs []*net.SRV
-
-	updateURLs := func(service, scheme string) error {
-		_, addrs, err := lookupSRV(service, "tcp", domain)
-		if err != nil {
-			return err
-		}
-		for _, srv := range addrs {
-			urls = append(urls, &url.URL{
-				Scheme: scheme,
-				Host:   net.JoinHostPort(srv.Target, fmt.Sprintf("%d", srv.Port)),
-			})
-		}
-		srvs = append(srvs, addrs...)
-		return nil
-	}
-
-	errHTTPS := updateURLs(service+"-ssl", "https")
-	errHTTP := updateURLs(service, "http")
-
-	if errHTTPS != nil && errHTTP != nil {
-		return nil, fmt.Errorf("dns lookup errors: %s and %s", errHTTPS, errHTTP)
-	}
-
-	endpoints := make([]string, len(urls))
-	for i := range urls {
-		endpoints[i] = urls[i].String()
-	}
-	return &SRVClients{Endpoints: endpoints, SRVs: srvs}, nil
+	return strings.Join(stringParts, ","), nil
 }

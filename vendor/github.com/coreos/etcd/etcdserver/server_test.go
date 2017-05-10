@@ -585,49 +585,6 @@ func TestApplyConfChangeShouldStop(t *testing.T) {
 	}
 }
 
-// TestApplyConfigChangeUpdatesConsistIndex ensures a config change also updates the consistIndex
-// where consistIndex equals to applied index.
-func TestApplyConfigChangeUpdatesConsistIndex(t *testing.T) {
-	cl := membership.NewCluster("")
-	cl.SetStore(store.New())
-	cl.AddMember(&membership.Member{ID: types.ID(1)})
-	r := newRaftNode(raftNodeConfig{
-		Node:      newNodeNop(),
-		transport: rafthttp.NewNopTransporter(),
-	})
-	srv := &EtcdServer{
-		id:      1,
-		r:       *r,
-		cluster: cl,
-		w:       wait.New(),
-	}
-
-	// create EntryConfChange entry
-	now := time.Now()
-	urls, err := types.NewURLs([]string{"http://whatever:123"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := membership.NewMember("", urls, "", &now)
-	m.ID = types.ID(2)
-	b, err := json.Marshal(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cc := &raftpb.ConfChange{Type: raftpb.ConfChangeAddNode, NodeID: 2, Context: b}
-	ents := []raftpb.Entry{{
-		Index: 2,
-		Type:  raftpb.EntryConfChange,
-		Data:  pbutil.MustMarshal(cc),
-	}}
-
-	_, appliedi, _ := srv.apply(ents, &raftpb.ConfState{})
-	consistIndex := srv.consistIndex.ConsistentIndex()
-	if consistIndex != appliedi {
-		t.Fatalf("consistIndex = %v, want %v", consistIndex, appliedi)
-	}
-}
-
 // TestApplyMultiConfChangeShouldStop ensures that apply will return shouldStop
 // if the local member is removed along with other conf updates.
 func TestApplyMultiConfChangeShouldStop(t *testing.T) {
@@ -949,89 +906,6 @@ func TestSnapshot(t *testing.T) {
 	srv.snapshot(1, raftpb.ConfState{Nodes: []uint64{1}})
 	<-ch
 	<-ch
-}
-
-// TestSnapshotOrdering ensures raft persists snapshot onto disk before
-// snapshot db is applied.
-func TestSnapshotOrdering(t *testing.T) {
-	n := newNopReadyNode()
-	st := store.New()
-	cl := membership.NewCluster("abc")
-	cl.SetStore(st)
-
-	testdir, err := ioutil.TempDir(os.TempDir(), "testsnapdir")
-	if err != nil {
-		t.Fatalf("couldn't open tempdir (%v)", err)
-	}
-	defer os.RemoveAll(testdir)
-	if err := os.MkdirAll(testdir+"/member/snap", 0755); err != nil {
-		t.Fatalf("couldn't make snap dir (%v)", err)
-	}
-
-	rs := raft.NewMemoryStorage()
-	p := mockstorage.NewStorageRecorderStream(testdir)
-	tr, snapDoneC := rafthttp.NewSnapTransporter(testdir)
-	r := newRaftNode(raftNodeConfig{
-		isIDRemoved: func(id uint64) bool { return cl.IsIDRemoved(types.ID(id)) },
-		Node:        n,
-		transport:   tr,
-		storage:     p,
-		raftStorage: rs,
-	})
-	s := &EtcdServer{
-		Cfg: &ServerConfig{
-			DataDir: testdir,
-		},
-		r:          *r,
-		store:      st,
-		cluster:    cl,
-		SyncTicker: &time.Ticker{},
-	}
-	s.applyV2 = &applierV2store{store: s.store, cluster: s.cluster}
-
-	be, tmpPath := backend.NewDefaultTmpBackend()
-	defer os.RemoveAll(tmpPath)
-	s.kv = mvcc.New(be, &lease.FakeLessor{}, &s.consistIndex)
-	s.be = be
-
-	s.start()
-	defer s.Stop()
-
-	actionc := p.Chan()
-	n.readyc <- raft.Ready{Messages: []raftpb.Message{{Type: raftpb.MsgSnap}}}
-	if ac := <-actionc; ac.Name != "Save" {
-		// MsgSnap triggers raftNode to call Save()
-		t.Fatalf("expect save() is called, but got %v", ac.Name)
-	}
-
-	// get the snapshot sent by the transport
-	snapMsg := <-snapDoneC
-
-	// Snapshot first triggers raftnode to persists the snapshot onto disk
-	// before renaming db snapshot file to db
-	snapMsg.Snapshot.Metadata.Index = 1
-	n.readyc <- raft.Ready{Snapshot: snapMsg.Snapshot}
-	var seenSaveSnap bool
-	timer := time.After(5 * time.Second)
-	for {
-		select {
-		case ac := <-actionc:
-			switch ac.Name {
-			// DBFilePath() is called immediately before snapshot renaming.
-			case "DBFilePath":
-				if !seenSaveSnap {
-					t.Fatalf("DBFilePath called before SaveSnap")
-				}
-				return
-			case "SaveSnap":
-				seenSaveSnap = true
-			default:
-				continue
-			}
-		case <-timer:
-			t.Fatalf("timeout waiting on actions")
-		}
-	}
 }
 
 // Applied > SnapCount should trigger a SaveSnap event

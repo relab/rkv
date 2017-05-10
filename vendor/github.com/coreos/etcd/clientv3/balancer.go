@@ -77,6 +77,7 @@ func newSimpleBalancer(eps []string) *simpleBalancer {
 	for i := range eps {
 		addrs[i].Addr = getHost(eps[i])
 	}
+	notifyCh <- addrs
 	sb := &simpleBalancer{
 		addrs:        addrs,
 		notifyCh:     notifyCh,
@@ -88,7 +89,6 @@ func newSimpleBalancer(eps []string) *simpleBalancer {
 		updateAddrsC: make(chan struct{}, 1),
 		host2ep:      getHost2ep(eps),
 	}
-	close(sb.downc)
 	go sb.updateNotifyLoop()
 	return sb
 }
@@ -170,51 +170,38 @@ func (b *simpleBalancer) updateNotifyLoop() {
 
 	for {
 		b.mu.RLock()
-		upc, downc, addr := b.upc, b.downc, b.pinAddr
+		upc := b.upc
 		b.mu.RUnlock()
-		// downc or upc should be closed
-		select {
-		case <-downc:
-			downc = nil
-		default:
-		}
+		var downc chan struct{}
 		select {
 		case <-upc:
-			upc = nil
-		default:
-		}
-		switch {
-		case downc == nil && upc == nil:
-			// stale
-			select {
-			case <-b.stopc:
-				return
-			default:
+			var addr string
+			b.mu.RLock()
+			addr = b.pinAddr
+			// Up() sets pinAddr and downc as a pair under b.mu
+			downc = b.downc
+			b.mu.RUnlock()
+			if addr == "" {
+				break
 			}
-		case downc == nil:
-			b.notifyAddrs()
+			// close opened connections that are not pinAddr
+			// this ensures only one connection is open per client
 			select {
-			case <-upc:
-			case <-b.updateAddrsC:
-				b.notifyAddrs()
-			case <-b.stopc:
-				return
-			}
-		case upc == nil:
-			select {
-			// close connections that are not the pinned address
 			case b.notifyCh <- []grpc.Address{{Addr: addr}}:
-			case <-downc:
 			case <-b.stopc:
 				return
 			}
-			select {
-			case <-downc:
-			case <-b.updateAddrsC:
-			case <-b.stopc:
-				return
-			}
+		case <-b.updateAddrsC:
 			b.notifyAddrs()
+			continue
+		}
+		select {
+		case <-downc:
+			b.notifyAddrs()
+		case <-b.updateAddrsC:
+			b.notifyAddrs()
+		case <-b.stopc:
+			return
 		}
 	}
 }
@@ -244,20 +231,23 @@ func (b *simpleBalancer) Up(addr grpc.Address) func(error) {
 	if !hasAddr(b.addrs, addr.Addr) {
 		return func(err error) {}
 	}
-	if b.pinAddr != "" {
-		return func(err error) {}
+
+	if b.pinAddr == "" {
+		// notify waiting Get()s and pin first connected address
+		close(b.upc)
+		b.downc = make(chan struct{})
+		b.pinAddr = addr.Addr
+		// notify client that a connection is up
+		b.readyOnce.Do(func() { close(b.readyc) })
 	}
-	// notify waiting Get()s and pin first connected address
-	close(b.upc)
-	b.downc = make(chan struct{})
-	b.pinAddr = addr.Addr
-	// notify client that a connection is up
-	b.readyOnce.Do(func() { close(b.readyc) })
+
 	return func(err error) {
 		b.mu.Lock()
-		b.upc = make(chan struct{})
-		close(b.downc)
-		b.pinAddr = ""
+		if b.pinAddr == addr.Addr {
+			b.upc = make(chan struct{})
+			close(b.downc)
+			b.pinAddr = ""
+		}
 		b.mu.Unlock()
 	}
 }
@@ -290,8 +280,6 @@ func (b *simpleBalancer) Get(ctx context.Context, opts grpc.BalancerGetOptions) 
 		b.mu.RUnlock()
 		select {
 		case <-ch:
-		case <-b.donec:
-			return grpc.Address{Addr: ""}, nil, grpc.ErrClientConnClosing
 		case <-ctx.Done():
 			return grpc.Address{Addr: ""}, nil, ctx.Err()
 		}

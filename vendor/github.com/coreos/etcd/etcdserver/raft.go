@@ -83,8 +83,7 @@ type RaftTimer interface {
 type apply struct {
 	entries  []raftpb.Entry
 	snapshot raftpb.Snapshot
-	// notifyc synchronizes etcd server applies with the raft node
-	notifyc chan struct{}
+	raftDone <-chan struct{} // rx {} after raft has persisted messages
 }
 
 type raftNode struct {
@@ -191,11 +190,11 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 					}
 				}
 
-				notifyc := make(chan struct{}, 1)
+				raftDone := make(chan struct{}, 1)
 				ap := apply{
 					entries:  rd.CommittedEntries,
 					snapshot: rd.Snapshot,
-					notifyc:  notifyc,
+					raftDone: raftDone,
 				}
 
 				updateCommittedIndex(&ap, rh)
@@ -228,9 +227,6 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 					if err := r.storage.SaveSnap(rd.Snapshot); err != nil {
 						plog.Fatalf("raft save snapshot error: %v", err)
 					}
-					// etcdserver now claim the snapshot has been persisted onto the disk
-					notifyc <- struct{}{}
-
 					// gofail: var raftAfterSaveSnap struct{}
 					r.raftStorage.ApplySnapshot(rd.Snapshot)
 					plog.Infof("raft applied incoming snapshot at index %d", rd.Snapshot.Metadata.Index)
@@ -244,7 +240,7 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 					msgs := r.processMessages(rd.Messages)
 
 					// now unblocks 'applyAll' that waits on Raft log disk writes before triggering snapshots
-					notifyc <- struct{}{}
+					raftDone <- struct{}{}
 
 					// Candidate or follower needs to wait for all pending configuration
 					// changes to be applied before sending messages.
@@ -263,9 +259,9 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 					if waitApply {
 						// blocks until 'applyAll' calls 'applyWait.Trigger'
 						// to be in sync with scheduled config-change job
-						// (assume notifyc has cap of 1)
+						// (assume raftDone has cap of 1)
 						select {
-						case notifyc <- struct{}{}:
+						case raftDone <- struct{}{}:
 						case <-r.stopped:
 							return
 						}
@@ -275,7 +271,7 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 					r.transport.Send(msgs)
 				} else {
 					// leader already processed 'MsgSnap' and signaled
-					notifyc <- struct{}{}
+					raftDone <- struct{}{}
 				}
 
 				r.Advance()

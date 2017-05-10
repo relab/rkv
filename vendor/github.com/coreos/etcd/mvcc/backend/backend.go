@@ -41,8 +41,6 @@ var (
 	initialMmapSize = uint64(10 * 1024 * 1024 * 1024)
 
 	plog = capnslog.NewPackageLogger("github.com/coreos/etcd", "mvcc/backend")
-
-	snapshotWarningTimeout = 30 * time.Second
 )
 
 type Backend interface {
@@ -165,23 +163,6 @@ func (b *backend) ForceCommit() {
 }
 
 func (b *backend) Snapshot() Snapshot {
-	stopc, donec := make(chan struct{}), make(chan struct{})
-	go func() {
-		defer close(donec)
-		start := time.Now()
-		ticker := time.NewTicker(snapshotWarningTimeout)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				plog.Warningf("snapshotting is taking more than %v seconds to finish [started at %v]", time.Since(start).Seconds(), start)
-			case <-stopc:
-				snapshotDurations.Observe(time.Since(start).Seconds())
-				return
-			}
-		}
-	}()
-
 	b.batchTx.Commit()
 
 	b.mu.RLock()
@@ -190,7 +171,7 @@ func (b *backend) Snapshot() Snapshot {
 	if err != nil {
 		plog.Fatalf("cannot begin tx (%s)", err)
 	}
-	return &snapshot{tx, stopc, donec}
+	return &snapshot{tx}
 }
 
 type IgnoreKey struct {
@@ -422,12 +403,6 @@ func NewDefaultTmpBackend() (*backend, string) {
 
 type snapshot struct {
 	*bolt.Tx
-	stopc chan struct{}
-	donec chan struct{}
 }
 
-func (s *snapshot) Close() error {
-	close(s.stopc)
-	<-s.donec
-	return s.Tx.Rollback()
-}
+func (s *snapshot) Close() error { return s.Tx.Rollback() }

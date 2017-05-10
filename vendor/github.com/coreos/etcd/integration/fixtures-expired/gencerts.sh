@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-if ! [[ "$0" =~ "./gencerts.sh" ]]; then
-	echo "must be run from 'fixtures-expired'"
-	exit 255
-fi
-
 if which cfssl >/dev/null; then
     echo "cfssl is installed; generating certs"
 else
@@ -82,8 +77,8 @@ cfssl gencert \
     --config ./etcd-gencert.json \
     ./server-ca-csr.json | cfssljson --bare ./server
 
-rm ./*.json
-rm ./*.csr
+rm -f ./*.json
+rm -f ./*.csr
 
 if which openssl >/dev/null; then
     openssl x509 -in ./etcd-root-ca.pem -text -noout

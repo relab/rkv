@@ -1,5 +1,5 @@
-hash: ddb7ca9c089645181b5ef58cbb078ade34b7e486db195fe5b92450f86d726a5f
-updated: 2017-05-10T13:24:48.677795444+02:00
+hash: d8097df0d1bf1aae3dab1e903e64e0b3a2c33863414bae865b93e22c74a26cc3
+updated: 2017-05-10T20:03:53.647054218+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 93f237eba9b0602f3e73710416558854a81d9337
@@ -12,7 +12,7 @@ imports:
 - name: github.com/cenkalti/backoff
   version: 5d150e7eec023ce7a124856b37c68e54b4050ac7
 - name: github.com/coreos/etcd
-  version: 47f5b7c3add605229555fe05fffc513312cb7ee5
+  version: 7e6d876385396bf3ea8f1b58ab24b697a3d9f5d8
   subpackages:
   - etcdserver/stats
   - pkg/fileutil

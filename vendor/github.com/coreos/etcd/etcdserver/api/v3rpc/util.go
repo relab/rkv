@@ -42,6 +42,8 @@ func togRPCError(err error) error {
 		return rpctypes.ErrGRPCCompacted
 	case mvcc.ErrFutureRev:
 		return rpctypes.ErrGRPCFutureRev
+	case lease.ErrLeaseNotFound:
+		return rpctypes.ErrGRPCLeaseNotFound
 	case etcdserver.ErrRequestTooLarge:
 		return rpctypes.ErrGRPCRequestTooLarge
 	case etcdserver.ErrNoSpace:

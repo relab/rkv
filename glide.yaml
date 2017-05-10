@@ -9,7 +9,9 @@ import:
   - proto
 - package: github.com/hashicorp/go-immutable-radix
 - package: github.com/hashicorp/raft
-  version: library-v2-stage-one
+  version: 939ebd2103731c2f38c7964d8dd24af0e1b26dc3
+- package: github.com/coreos/etcd
+  version: v3.2.0-rc.0
 - package: github.com/prometheus/client_golang
   version: ~0.8.0
   subpackages:

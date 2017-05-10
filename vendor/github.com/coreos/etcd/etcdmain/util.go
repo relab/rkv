@@ -18,23 +18,22 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/coreos/etcd/pkg/srv"
+	"github.com/coreos/etcd/client"
 	"github.com/coreos/etcd/pkg/transport"
 )
 
-func discoverEndpoints(dns string, ca string, insecure bool) (s srv.SRVClients) {
+func discoverEndpoints(dns string, ca string, insecure bool) (endpoints []string) {
 	if dns == "" {
-		return s
+		return nil
 	}
-	srvs, err := srv.GetClient("etcd-client", dns)
+	endpoints, err := client.NewSRVDiscover().Discover(dns)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	endpoints := srvs.Endpoints
 	plog.Infof("discovered the cluster %s from %s", endpoints, dns)
 	if insecure {
-		return *srvs
+		return endpoints
 	}
 	// confirm TLS connections are good
 	tlsInfo := transport.TLSInfo{
@@ -47,19 +46,5 @@ func discoverEndpoints(dns string, ca string, insecure bool) (s srv.SRVClients) 
 		plog.Warningf("%v", err)
 	}
 	plog.Infof("using discovered endpoints %v", endpoints)
-
-	// map endpoints back to SRVClients struct with SRV data
-	eps := make(map[string]struct{})
-	for _, ep := range endpoints {
-		eps[ep] = struct{}{}
-	}
-	for i := range srvs.Endpoints {
-		if _, ok := eps[srvs.Endpoints[i]]; !ok {
-			continue
-		}
-		s.Endpoints = append(s.Endpoints, srvs.Endpoints[i])
-		s.SRVs = append(s.SRVs, srvs.SRVs[i])
-	}
-
-	return s
+	return endpoints
 }
