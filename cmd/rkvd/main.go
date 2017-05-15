@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math"
 	"math/rand"
 	"net"
@@ -19,6 +20,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	etcdraft "github.com/coreos/etcd/raft"
+	"github.com/coreos/etcd/wal"
+	"github.com/coreos/etcd/wal/walpb"
 	hashic "github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 	"github.com/relab/raft"
@@ -281,11 +284,40 @@ func runetcd(
 		}
 	}
 
+	dir := fmt.Sprintf("etcdwal%.2d", id)
+
+	if !wal.Exist(dir) {
+		if err := os.Mkdir(dir, 0750); err != nil {
+			logger.Fatalf("rkvd: cannot create dir for wal (%v)", err)
+		}
+
+		w, err := wal.Create(dir, nil)
+		if err != nil {
+			logger.Fatalf("rkvd: create wal error (%v)", err)
+		}
+		w.Close()
+	}
+
+	walsnap := walpb.Snapshot{}
+	w, err := wal.Open(dir, walsnap)
+	if err != nil {
+		logger.Fatalf("rkvd: error loading wal (%v)", err)
+	}
+
+	_, st, ents, err := w.ReadAll()
+	if err != nil {
+		log.Fatalf("rkvd: failed to read WAL (%v)", err)
+	}
+
 	storage := etcdraft.NewMemoryStorage()
+	storage.SetHardState(st)
+	storage.Append(ents)
+
 	node := etcd.NewRaft(
 		logger,
 		NewStore(),
 		storage,
+		w,
 		&etcdraft.Config{
 			ID:            id,
 			ElectionTick:  int(*electionTimeout / *heartbeatTimeout),
