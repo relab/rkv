@@ -173,15 +173,7 @@ func runhashicorp(
 	lis net.Listener, grpcServer *grpc.Server,
 	id uint64, ids []uint64, nodes []string,
 ) {
-	var selflis string
-	selflis, ids, nodes = selfIDsNodes(logger, id, ids, nodes)
-
-	servers := make([]hashic.Server, len(nodes)+1)
-	servers[0] = hashic.Server{
-		Suffrage: hashic.Voter,
-		ID:       hashic.ServerID(selflis),
-		Address:  hashic.ServerAddress(selflis),
-	}
+	servers := make([]hashic.Server, len(nodes))
 	for i, addr := range nodes {
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
@@ -190,18 +182,24 @@ func runhashicorp(
 		p, _ := strconv.Atoi(port)
 		addr = host + ":" + strconv.Itoa(p-100)
 
-		servers[i+1] = hashic.Server{
-			Suffrage: hashic.Voter,
+		suffrage := hashic.Voter
+
+		if !contains(uint64(i+1), ids) {
+			suffrage = hashic.Nonvoter
+		}
+
+		servers[i] = hashic.Server{
+			Suffrage: suffrage,
 			ID:       hashic.ServerID(addr),
 			Address:  hashic.ServerAddress(addr),
 		}
 	}
 
-	addr, err := net.ResolveTCPAddr("tcp", selflis)
+	addr, err := net.ResolveTCPAddr("tcp", string(servers[id-1].Address))
 	if err != nil {
 		logger.Fatal(err)
 	}
-	trans, err := hashic.NewTCPTransport(selflis, addr, len(ids), 10*time.Second, os.Stderr)
+	trans, err := hashic.NewTCPTransport(string(servers[id-1].Address), addr, len(nodes)+1, 10*time.Second, os.Stderr)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -232,7 +230,7 @@ func runhashicorp(
 	snaps := hashic.NewInmemSnapshotStore()
 
 	cfg := &hashic.Config{
-		LocalID:            hashic.ServerID(selflis),
+		LocalID:            servers[id-1].ID,
 		ProtocolVersion:    hashic.ProtocolVersionMax,
 		HeartbeatTimeout:   *electionTimeout,
 		ElectionTimeout:    *electionTimeout,
@@ -245,7 +243,7 @@ func runhashicorp(
 		LeaderLeaseTimeout: *electionTimeout / 2,
 	}
 
-	node := hraft.NewRaft(logger, NewStore(), cfg, servers, trans, logs, logs, snaps)
+	node := hraft.NewRaft(logger, NewStore(), cfg, servers, trans, logs, logs, snaps, ids)
 
 	service := NewService(node)
 	rkvpb.RegisterRKVServer(grpcServer, service)
@@ -258,14 +256,10 @@ func runetcd(
 	lis net.Listener, grpcServer *grpc.Server,
 	id uint64, ids []uint64, nodes []string,
 ) {
-	var selflis string
-	selflis, ids, nodes = selfIDsNodes(logger, id, ids, nodes)
+	peers := make([]etcdraft.Peer, len(ids))
 
-	peers := make([]etcdraft.Peer, len(nodes))
-
-	for i, addr := range nodes {
-		nid := ids[i]
-
+	for i, nid := range ids {
+		addr := nodes[i]
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
 			logger.Fatal(err)
@@ -333,6 +327,8 @@ func runetcd(
 		},
 		peers,
 		*heartbeatTimeout,
+		!contains(id, ids),
+		nodes,
 	)
 
 	service := NewService(node)
@@ -341,6 +337,13 @@ func runetcd(
 	go func() {
 		logger.Fatal(grpcServer.Serve(lis))
 	}()
+
+	host, port, err := net.SplitHostPort(nodes[id-1])
+	if err != nil {
+		logger.Fatal(err)
+	}
+	p, _ := strconv.Atoi(port)
+	selflis := host + ":" + strconv.Itoa(p-100)
 
 	lishttp, err := net.Listen("tcp", selflis)
 
@@ -388,16 +391,11 @@ func rungorums(
 	logger.Fatal(node.Run(grpcServer))
 }
 
-func selfIDsNodes(logger logrus.FieldLogger, id uint64, ids []uint64, nodes []string) (string, []uint64, []string) {
-	host, port, err := net.SplitHostPort(nodes[id-1])
-	if err != nil {
-		logger.Fatal(err)
+func contains(x uint64, xs []uint64) bool {
+	for _, y := range xs {
+		if y == x {
+			return true
+		}
 	}
-	p, _ := strconv.Atoi(port)
-	selflis := host + ":" + strconv.Itoa(p-100)
-
-	ids = append(ids[:id-1], ids[id:]...)
-	nodes = append(nodes[:id-1], nodes[id:]...)
-
-	return selflis, ids, nodes
+	return false
 }
