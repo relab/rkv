@@ -280,7 +280,13 @@ func runetcd(
 
 	dir := fmt.Sprintf("etcdwal%.2d", id)
 
-	if !wal.Exist(dir) {
+	switch {
+	case wal.Exist(dir) && !*recover:
+		if err := os.RemoveAll(dir); err != nil {
+			logger.Fatal(err)
+		}
+		fallthrough
+	case !wal.Exist(dir):
 		if err := os.Mkdir(dir, 0750); err != nil {
 			logger.Fatalf("rkvd: cannot create dir for wal (%v)", err)
 		}
