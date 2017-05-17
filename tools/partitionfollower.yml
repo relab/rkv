@@ -62,4 +62,4 @@
 
   tasks:
     - name: Stop servers
-      shell: killall rkvd
+      shell: killall -s INT rkvd

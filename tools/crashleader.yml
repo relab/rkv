@@ -19,7 +19,7 @@
       shell: sleep 2s
 
     - name: Kill leader after 25s
-      shell: sleep 25; if [[ $(getleaderid -cluster "{{servers}}") -eq "{{raftID}}" ]]; then killall rkvd; fi
+      shell: sleep 25; if [[ $(getleaderid -cluster "{{servers}}") -eq "{{raftID}}" ]]; then killall -INT rkvd; fi
       async: 40
       poll: 0
 
@@ -55,4 +55,4 @@
 
   tasks:
     - name: Stop servers
-      shell: killall rkvd
+      shell: killall -s INT rkvd
