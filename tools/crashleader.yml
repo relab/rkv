@@ -10,10 +10,10 @@
 
   tasks:
     - name: Remove old server data
-      shell: /bin/sh -c 'rm -rf /media/ephemeral0/*'
+      shell: /bin/sh -c 'rm -rf /media/ephemeral0/tmp/*'
 
     - name: Start servers
-      shell: cd /media/ephemeral0/; GOGC=off nohup rkvd -heartbeat 2ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -heartbeat 2ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
 
     - name: Sleep
       shell: sleep 2s
