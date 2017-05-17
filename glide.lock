@@ -1,5 +1,5 @@
 hash: da36d60527dbe95bfda8e8c798d149773f33f9ecf162422aba30b7cc486517c1
-updated: 2017-05-17T17:49:46.099928415+02:00
+updated: 2017-05-17T20:55:31.635646438+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 93f237eba9b0602f3e73710416558854a81d9337
@@ -47,7 +47,7 @@ imports:
   subpackages:
   - capnslog
 - name: github.com/go-kit/kit
-  version: d67bb4c202e3b91377d1079b110a6c9ce23ab2f8
+  version: 6964666de57c88f7d93da127e900d201b632f561
   subpackages:
   - metrics
   - metrics/internal/lv
@@ -108,7 +108,7 @@ imports:
   repo: https://github.com/s111/gorums.git
   vcs: git
 - name: github.com/relab/raft
-  version: 389f04669e20c866a49561a728b4e065e78b2c02
+  version: 890591247cc070db082c344152469a7da04de9d4
   subpackages:
   - commonpb
   - etcd
