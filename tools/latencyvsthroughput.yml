@@ -10,14 +10,14 @@
 
   tasks:
     - name: Remove old server data
-      shell: /bin/sh -c 'rm -rf /mnt/*'
+      shell: /bin/sh -c 'rm -rf /media/ephemeral0/*'
 
     - name: Start servers 1-4
-      shell: cd /mnt/; GOGC=off nohup rkvd -heartbeat 2ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      shell: cd /media/ephemeral0/; GOGC=off nohup rkvd -heartbeat 2ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
       when: raftID != 5
 
     - name: Start server 5
-      shell: cd /mnt/; GOGC=off nohup rkvd -heartbeat 2ms -election 50s -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      shell: cd /media/ephemeral0/; GOGC=off nohup rkvd -heartbeat 2ms -election 50s -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
       when: raftID == 5
 
     - name: Sleep
@@ -37,15 +37,15 @@
 
   tasks:
     - name: Remove old client data
-      shell: /bin/sh -c 'rm -rf /mnt/tmp/*'
+      shell: /bin/sh -c 'rm -rf /media/ephemeral0/tmp/*'
 
     - name: Throughput
-      shell: cd /mnt/tmp/; GOGC=off rkvctl -cluster "{{servers}}" -throughput "{{throughput|int}}" -clients "{{clients}}" -time "{{time}}" -payload "{{payload}}"
+      shell: cd /media/ephemeral0/tmp/; GOGC=off rkvctl -cluster "{{servers}}" -throughput "{{throughput|int}}" -clients "{{clients}}" -time "{{time}}" -payload "{{payload}}"
       async: 120
       poll: 5
 
     - name: Move data
-      shell: /bin/sh -c 'mv /mnt/tmp/latency*.csv /mnt/{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
 
 - name: Cleanup
   hosts: raft-servers
