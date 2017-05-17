@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Sirupsen/logrus"
@@ -157,13 +159,33 @@ func main() {
 		}()
 	}
 
+	lat := raft.NewLatency()
+	cat := raft.NewCatchup()
+
+	var once sync.Once
+	writeData := func() {
+		lat.Write(fmt.Sprintf("./latency-%v.csv", time.Now().UnixNano()))
+		cat.Write(fmt.Sprintf("./catchup-%v.csv", time.Now().UnixNano()))
+	}
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		<-c
+		once.Do(writeData)
+		os.Exit(1)
+	}()
+	defer func() {
+		once.Do(writeData)
+	}()
+
 	switch *backend {
 	case bgorums:
-		rungorums(logger, lis, grpcServer, *id, ids, nodes)
+		rungorums(logger, lis, grpcServer, *id, ids, nodes, lat, cat)
 	case betcd:
-		runetcd(logger, lis, grpcServer, *id, ids, nodes)
+		runetcd(logger, lis, grpcServer, *id, ids, nodes, lat)
 	case bhashicorp:
-		runhashicorp(logger, lis, grpcServer, *id, ids, nodes)
+		runhashicorp(logger, lis, grpcServer, *id, ids, nodes, lat)
 	}
 
 }
@@ -172,6 +194,7 @@ func runhashicorp(
 	logger logrus.FieldLogger,
 	lis net.Listener, grpcServer *grpc.Server,
 	id uint64, ids []uint64, nodes []string,
+	lat *raft.Latency,
 ) {
 	servers := make([]hashic.Server, len(nodes))
 	for i, addr := range nodes {
@@ -243,7 +266,7 @@ func runhashicorp(
 		LeaderLeaseTimeout: *electionTimeout / 2,
 	}
 
-	node := hraft.NewRaft(logger, NewStore(), cfg, servers, trans, logs, logs, snaps, ids)
+	node := hraft.NewRaft(logger, NewStore(), cfg, servers, trans, logs, logs, snaps, ids, lat)
 
 	service := NewService(node)
 	rkvpb.RegisterRKVServer(grpcServer, service)
@@ -255,6 +278,7 @@ func runetcd(
 	logger logrus.FieldLogger,
 	lis net.Listener, grpcServer *grpc.Server,
 	id uint64, ids []uint64, nodes []string,
+	lat *raft.Latency,
 ) {
 	peers := make([]etcdraft.Peer, len(ids))
 
@@ -335,6 +359,7 @@ func runetcd(
 		*heartbeatTimeout,
 		!contains(id, ids),
 		nodes,
+		lat,
 	)
 
 	service := NewService(node)
@@ -364,6 +389,7 @@ func rungorums(
 	logger logrus.FieldLogger,
 	lis net.Listener, grpcServer *grpc.Server,
 	id uint64, ids []uint64, nodes []string,
+	lat *raft.Latency, cat *raft.Catchup,
 ) {
 	storage, err := raft.NewFileStorage(fmt.Sprintf("db%.2d.bolt", id), !*recover)
 
@@ -385,7 +411,7 @@ func rungorums(
 		CatchupMultiplier: *catchupMultiplier,
 		Logger:            logger,
 		MetricsEnabled:    true,
-	})
+	}, lat, cat)
 
 	service := NewService(node)
 	rkvpb.RegisterRKVServer(grpcServer, service)
