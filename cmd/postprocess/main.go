@@ -15,18 +15,52 @@ import (
 
 const countRange = 0.5
 
+const (
+	first = iota
+	xThroughputYLatency
+	xTimeYThroughput
+	last
+)
+
 func main() {
 	if len(os.Args) < 2 {
+		errexit("process not specified")
+	}
+
+	process, err := strconv.Atoi(os.Args[1])
+	if err != nil || !(process > first && process < last) {
+		errexit("process must be " + strconv.Itoa(first) + " > x < " + strconv.Itoa(last))
+	}
+
+	if len(os.Args) < 3 {
 		errexit("no input files")
 	}
 
+	files := os.Args[2:]
+
+	switch process {
+	case xThroughputYLatency:
+		xThroughputYLatencyFunc(files)
+	case xTimeYThroughput:
+		panic("not implemented")
+	}
+}
+
+func xThroughputYLatencyFunc(files []string) {
 	data := make(map[string][]string)
 	var experiments []string
 
-	for _, filename := range os.Args[1:] {
+	for _, filename := range files {
 		parts := strings.Split(filename, "_")
+		if len(parts) < 2 {
+			errexit("invalid filename: " + filename)
+		}
 		lastpart := parts[len(parts)-1]
-		experiment := filename[:len(filename)-len(lastpart)-1]
+		lenpostfix := len(filename) - len(lastpart) - 1
+		if lenpostfix < 0 {
+			errexit("invalid filename: " + filename)
+		}
+		experiment := filename[:lenpostfix]
 		if _, ok := data[experiment]; !ok {
 			experiments = append(experiments, experiment)
 		}
@@ -35,16 +69,21 @@ func main() {
 
 	sort.Strings(experiments)
 
-	fmt.Printf(
+	var result []string
+
+	result = append(result, fmt.Sprintf(
 		"%s\t%s\t%s\t%s\t%s\n",
 		"name",
 		"throughput/s",
 		"throughput/s stdev",
 		"latency ms",
 		"latency ms stdev",
-	)
+	))
 
-	for _, experiment := range experiments {
+	for i, experiment := range experiments {
+		msg := "Reading files from experiment"
+		fmt.Fprintf(os.Stderr, "%s %s into memory\n", msg, experiment)
+
 		allstarts, allends, alldurs := read(data[experiment])
 
 		var allthroughput []float64
@@ -68,14 +107,20 @@ func main() {
 		stdevthroughput, _ := stats.StandardDeviation(allthroughput)
 		meanlatency, _ := stats.Mean(allatency)
 		stdevlatency, _ := stats.StandardDeviation(allatency)
-		fmt.Printf(
+		result = append(result, fmt.Sprintf(
 			"%s\t%f\t%f\t%f\t%f\n",
 			experiment,
 			meanthroughput,
 			stdevthroughput,
 			time.Duration(meanlatency).Seconds()*1000,
 			time.Duration(stdevlatency).Seconds()*1000,
-		)
+		))
+
+		fmt.Fprintf(os.Stderr, "%s --> %03.0f%%\n", strings.Repeat(" ", len(msg)-4), float64(i+1)/float64(len(experiments))*100)
+	}
+
+	for _, s := range result {
+		fmt.Print(s)
 	}
 }
 
@@ -112,7 +157,7 @@ func read(data []string) ([][]time.Time, [][]time.Time, [][]float64) {
 	for _, onerun := range data {
 		f, err := os.Open(onerun)
 		if err != nil {
-			panic(err)
+			errexit("error opening file: " + onerun)
 		}
 
 		r := csv.NewReader(f)
@@ -161,7 +206,7 @@ func read(data []string) ([][]time.Time, [][]time.Time, [][]float64) {
 }
 
 func errexit(msg string) {
-	fmt.Printf("preprocess: %s\n\nUsage:\n", msg)
-	fmt.Println("\tpreprocess test1_1.csv test1_2.csv test2_1.csv test2_2.csv ...")
+	fmt.Printf("postprocess: %s\n\nUsage:\n", msg)
+	fmt.Printf("\tpostprocess x test1_1.csv test1_2.csv test2_1.csv ..., where %d > x < %d\n", first, last)
 	os.Exit(1)
 }
