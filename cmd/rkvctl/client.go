@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"math/rand"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +13,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/go-kit/kit/metrics"
+	"github.com/relab/raft"
 	"github.com/relab/raft/commonpb"
 	"github.com/relab/rkv/rkvpb"
 	"google.golang.org/grpc"
@@ -35,7 +34,7 @@ type client struct {
 	s *stats
 
 	payload int
-	lat     *latency
+	lat     *raft.Latency
 }
 
 // z wraps rand.Zipf with a mutex.
@@ -51,7 +50,7 @@ func (zz *z) Uint64() uint64 {
 	return i
 }
 
-func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats, payload int, lat *latency) (*client, error) {
+func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats, payload int, lat *raft.Latency) (*client, error) {
 	conns := make([]rkvpb.RKVClient, len(servers))
 
 	for i, server := range servers {
@@ -103,6 +102,7 @@ func newBackOff() *backoff.ExponentialBackOff {
 
 func notify(err error, d time.Duration) {
 	// TODO For debugging.
+	fmt.Println(err, d)
 }
 
 // ErrMaxInFlightReached indicates that there are too many messages in-flight.
@@ -259,7 +259,7 @@ func (c *client) insert() (*rkvpb.InsertResponse, error) {
 
 		c.s.writes.Add(1)
 		timer.ObserveDuration()
-		c.lat.record(start)
+		c.lat.Record(start)
 		return nil
 	}
 
@@ -280,35 +280,4 @@ func (c *client) getLeader() uint64 {
 
 func (c *client) randPayload() string {
 	return strconv.FormatUint(c.zipf.Uint64(), 10) + strings.Repeat("X", c.payload)
-}
-
-type latency [][]string
-
-func newLatency() *latency {
-	lat := new(latency)
-	*lat = append(*lat, []string{"start", "end"})
-	return lat
-}
-
-func (l *latency) record(start time.Time) {
-	now := time.Now()
-	*l = append(*l, []string{
-		fmt.Sprintf("%d", start.UnixNano()),
-		fmt.Sprintf("%d", now.UnixNano()),
-	})
-}
-
-func (l *latency) write(path string) {
-	f, err := os.Create(path)
-
-	if err != nil {
-		panic("error creating file: " + err.Error())
-	}
-
-	w := csv.NewWriter(f)
-	w.WriteAll(*l) // Checking error below.
-
-	if err := w.Error(); err != nil {
-		panic("error writing csv: " + err.Error())
-	}
 }

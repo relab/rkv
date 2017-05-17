@@ -13,6 +13,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/relab/raft"
 	"github.com/relab/raft/commonpb"
 )
 
@@ -64,10 +65,10 @@ func main() {
 	var wg sync.WaitGroup
 	var wclients sync.WaitGroup
 
-	lat := newLatency()
+	lat := raft.NewLatency()
 
 	var once sync.Once
-	writeLatencies := func() { lat.write(fmt.Sprintf("./latency-%v.csv", time.Now().UnixNano())) }
+	writeLatencies := func() { lat.Write(fmt.Sprintf("./latency-%v.csv", time.Now().UnixNano())) }
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
