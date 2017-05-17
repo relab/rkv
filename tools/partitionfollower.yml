@@ -1,0 +1,65 @@
+- name: Startup
+  hosts: raft-servers
+  remote_user: ec2-user
+  gather_facts: false
+  ignore_errors: yes
+  vars:
+    backend: gorums
+    servers: "{{groups['raft-servers']|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
+    cluster: "{{(range(1,999)|list)[:groups['raft-servers']|length]|join(',')}}"
+
+  tasks:
+    - name: Remove old server data
+      shell: /bin/sh -c 'rm -rf /media/ephemeral0/*'
+
+    - name: Start first
+      shell: cd /media/ephemeral0/; GOGC=off nohup rkvd -heartbeat 2ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      when: raftID != groups['raft-servers']|length
+
+    - name: Start last server
+      shell: cd /media/ephemeral0/; GOGC=off nohup rkvd -heartbeat 2ms -election 2s -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      when: raftID == groups['raft-servers']|length
+
+    - name: Sleep
+      shell: sleep 2s
+
+    - name: Partition follower for 5s after 25s
+      become: true
+      shell: sleep 25; if [[ $(getleaderid -cluster "{{servers}}") -eq "{{raftID}}" ]]; then iptables -F; iptables -A INPUT -p tcp ! -s 152.94.0.0/16 --match multiport ! --dports 22 -m statistic --mode random --probability 1.0 -j DROP; sleep 5; iptables -F; fi
+      async: 40
+      poll: 0
+      when: raftID == groups['raft-servers']|length
+
+- name: Client
+  hosts: raft-clients
+  remote_user: ec2-user
+  gather_facts: false
+  ignore_errors: yes
+  vars:
+    servers: "{{groups['raft-servers']|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
+    throughput: 50
+    clients: 150
+    time: 60s
+    payload: 16
+
+  tasks:
+    - name: Remove old client data
+      shell: /bin/sh -c 'rm -rf /media/ephemeral0/tmp/*'
+
+    - name: Throughput
+      shell: cd /media/ephemeral0/tmp/; GOGC=off rkvctl -cluster "{{servers}}" -throughput "{{throughput|int}}" -clients "{{clients}}" -time "{{time}}" -payload "{{payload}}"
+      async: 120
+      poll: 5
+
+    - name: Move data
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+
+- name: Cleanup
+  hosts: raft-servers
+  remote_user: ec2-user
+  gather_facts: false
+  ignore_errors: yes
+
+  tasks:
+    - name: Stop servers
+      shell: killall rkvd
