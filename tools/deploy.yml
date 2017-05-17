@@ -6,24 +6,37 @@
 
   vars:
       keypair: red
-      instance_type: c4.xlarge
       security_group: UIS
       region: us-east-1
       image: ami-c58c1dd3
 
   tasks:
     - name: Launch instance
-      ec2: keypair="{{keypair}}" group="{{security_group}}"
-           region="{{region}}" zone="{{item.zone}}"
-           instance_type="{{instance_type}}" image="{{image}}"
-           count=1 wait=true
+      ec2:
+        keypair: "{{keypair}}"
+        group: "{{security_group}}"
+        region: "{{region}}"
+        zone: "{{item.zone}}"
+        instance_type: "{{item.instance_type}}"
+        image: "{{image}}"
+        count: 1
+        wait: true
+        volumes:
+          - device_name: /dev/xvda
+            delete_on_termination: true
+            volume_type: gp2
+            volume_size: 8
+          - device_name: /dev/xvdb
+            volume_type: ephemeral
+            ephemeral: ephemeral0
       register: ec2
       with_items:
-        - { zone: us-east-1a }
-        - { zone: us-east-1b }
-        - { zone: us-east-1c }
-        - { zone: us-east-1d }
-        - { zone: us-east-1e }
+        - { zone: us-east-1a, instance_type: r3.xlarge }
+        - { zone: us-east-1b, instance_type: r3.xlarge }
+        - { zone: us-east-1c, instance_type: r3.xlarge }
+        - { zone: us-east-1d, instance_type: r3.xlarge }
+        - { zone: us-east-1e, instance_type: r3.xlarge }
+        - { zone: us-east-1e, instance_type: r3.2xlarge }
 
     - name: Add new instances to host group
       add_host: hostname="{{item.instances[0].public_ip}}" groupname=deploy
@@ -47,16 +60,10 @@
         - git
         - htop
 
-    - name: Copy script
-      copy:
-        src: script.go
-        dest: ~/script.go
-
     - name: Install
       shell:
         cmd: |
           cd $HOME
-          mkdir go inmem
           curl -O "https://storage.googleapis.com/golang/go1.8.1.linux-amd64.tar.gz"
           sudo tar -C /usr/local -xzf go1.8.1.linux-amd64.tar.gz
           cat >> .bashrc <<EOF
@@ -66,8 +73,5 @@
           go get github.com/s111/rkv
           mv ~/go/src/github.com/s111 ~/go/src/github.com/relab
           go install github.com/relab/rkv/cmd/rkvd
-          sudo mount -t tmpfs -o size=4G tmpfs ~/inmem
-          echo "{{hostvars['localhost']['ec2']}}" > ~/ec2.txt
-          cat ~/ec2.txt | python -c "import sys,json;print(json.dumps(eval(sys.stdin.read())))" > ~/ec3.txt
-          mv ~/ec3.txt ~/ec2.txt
-          go run script.go
+          go install github.com/relab/rkv/cmd/rkvctl
+          reboot
