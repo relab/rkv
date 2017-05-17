@@ -10,14 +10,14 @@
 
   tasks:
     - name: Remove old server data
-      shell: /bin/sh -c 'rm -rf /media/ephemeral0/*'
+      shell: /bin/sh -c 'rm -rf /media/ephemeral0/tmp/*'
 
     - name: Start first
-      shell: cd /media/ephemeral0/; GOGC=off nohup rkvd -heartbeat 2ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -heartbeat 2ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
       when: raftID != groups['raft-servers']|length
 
     - name: Start last server
-      shell: cd /media/ephemeral0/; GOGC=off nohup rkvd -heartbeat 2ms -election 2s -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -heartbeat 2ms -election 2s -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
       when: raftID == groups['raft-servers']|length
 
     - name: Sleep
@@ -63,3 +63,9 @@
   tasks:
     - name: Stop servers
       shell: killall -s INT rkvd
+
+    - name: Move latency data
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/srvlat_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+
+    - name: Move catchup data
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/catchup*.csv /media/ephemeral0/srvcat_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
