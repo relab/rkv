@@ -1,0 +1,8 @@
+[raft-servers]
+server1.example.com   raftID=1
+server2.example.com   raftID=2
+server3.example.com   raftID=3
+server4.example.com   raftID=4
+server5.example.com   raftID=5
+[example-clients]
+client.example.com

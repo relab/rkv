@@ -1,0 +1,58 @@
+- name: Startup
+  hosts: raft-servers
+  remote_user: ec2-user
+  gather_facts: false
+  ignore_errors: yes
+  vars:
+    backend: gorums
+    servers: "{{groups['raft-servers']|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
+    cluster: "{{(range(1,999)|list)[:groups['raft-servers']|length]|join(',')}}"
+
+  tasks:
+    - name: Remove old server data
+      shell: /bin/sh -c 'rm -rf /mnt/*'
+
+    - name: Start servers 1-4
+      shell: cd /mnt/; GOGC=off nohup rkvd -heartbeat 2ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      when: raftID != 5
+
+    - name: Start server 5
+      shell: cd /mnt/; GOGC=off nohup rkvd -heartbeat 2ms -election 50s -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      when: raftID == 5
+
+    - name: Sleep
+      shell: sleep 2s
+
+- name: Client
+  hosts: raft-clients
+  remote_user: ec2-user
+  gather_facts: false
+  ignore_errors: yes
+  vars:
+    servers: "{{groups['raft-servers']|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
+    throughput: 50
+    clients: 150
+    time: 60s
+    payload: 16
+
+  tasks:
+    - name: Remove old client data
+      shell: /bin/sh -c 'rm -rf /mnt/tmp/*'
+
+    - name: Throughput
+      shell: cd /mnt/tmp/; GOGC=off rkvctl -cluster "{{servers}}" -throughput "{{throughput|int}}" -clients "{{clients}}" -time "{{time}}" -payload "{{payload}}"
+      async: 120
+      poll: 5
+
+    - name: Move data
+      shell: /bin/sh -c 'mv /mnt/tmp/latency*.csv /mnt/{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+
+- name: Cleanup
+  hosts: raft-servers
+  remote_user: ec2-user
+  gather_facts: false
+  ignore_errors: yes
+
+  tasks:
+    - name: Stop servers
+      shell: killall rkvd
