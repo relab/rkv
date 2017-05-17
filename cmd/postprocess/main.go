@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/logrusorgru/aurora"
 	"github.com/montanaflynn/stats"
 )
 
@@ -69,20 +70,18 @@ func xThroughputYLatencyFunc(files []string) {
 
 	sort.Strings(experiments)
 
-	var result []string
-
-	result = append(result, fmt.Sprintf(
+	fmt.Printf(
 		"%s\t%s\t%s\t%s\t%s\n",
 		"name",
 		"throughput/s",
 		"throughput/s stdev",
 		"latency ms",
 		"latency ms stdev",
-	))
+	)
 
 	for i, experiment := range experiments {
 		msg := "Reading files from experiment"
-		fmt.Fprintf(os.Stderr, "%s %s into memory\n", msg, experiment)
+		fmt.Fprintf(os.Stderr, aurora.Magenta("%s %s into memory\n").String(), msg, experiment)
 
 		allstarts, allends, alldurs := read(data[experiment])
 
@@ -107,20 +106,16 @@ func xThroughputYLatencyFunc(files []string) {
 		stdevthroughput, _ := stats.StandardDeviation(allthroughput)
 		meanlatency, _ := stats.Mean(allatency)
 		stdevlatency, _ := stats.StandardDeviation(allatency)
-		result = append(result, fmt.Sprintf(
+		fmt.Printf(
 			"%s\t%f\t%f\t%f\t%f\n",
 			experiment,
 			meanthroughput,
 			stdevthroughput,
 			time.Duration(meanlatency).Seconds()*1000,
 			time.Duration(stdevlatency).Seconds()*1000,
-		))
+		)
 
-		fmt.Fprintf(os.Stderr, "%s --> %03.0f%%\n", strings.Repeat(" ", len(msg)-4), float64(i+1)/float64(len(experiments))*100)
-	}
-
-	for _, s := range result {
-		fmt.Print(s)
+		fmt.Fprintf(os.Stderr, aurora.Magenta("%s --> %03.0f%%\n").String(), strings.Repeat(" ", len(msg)-4), float64(i+1)/float64(len(experiments))*100)
 	}
 }
 

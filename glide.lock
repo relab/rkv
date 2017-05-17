@@ -1,5 +1,5 @@
 hash: da36d60527dbe95bfda8e8c798d149773f33f9ecf162422aba30b7cc486517c1
-updated: 2017-05-17T12:57:44.347750594+02:00
+updated: 2017-05-17T14:55:14.086243658+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 93f237eba9b0602f3e73710416558854a81d9337
@@ -76,6 +76,8 @@ imports:
   version: 939ebd2103731c2f38c7964d8dd24af0e1b26dc3
 - name: github.com/hashicorp/raft-boltdb
   version: df631556b57507bd5d0ed4f87468fd93ab025bef
+- name: github.com/logrusorgru/aurora
+  version: 962a6974312dde57d1f6f5738b4f83e1af9f38a4
 - name: github.com/matttproud/golang_protobuf_extensions
   version: c12348ce28de40eed0136aa2b644d0ee0650e56c
   subpackages:
