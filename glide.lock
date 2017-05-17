@@ -80,6 +80,8 @@ imports:
   version: c12348ce28de40eed0136aa2b644d0ee0650e56c
   subpackages:
   - pbutil
+- name: github.com/montanaflynn/stats
+  version: 41c34e4914ec3c05d485e564d9028d8861d5d9ad
 - name: github.com/prometheus/client_golang
   version: c5b7fccd204277076155f10851dad72b76a49317
   subpackages:
