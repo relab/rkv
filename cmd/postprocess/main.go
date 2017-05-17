@@ -43,7 +43,30 @@ func main() {
 	case xThroughputYLatency:
 		xThroughputYLatencyFunc(files)
 	case xTimeYThroughput:
-		panic("not implemented")
+		xTimeYThroughputFunc(files)
+	}
+}
+
+func xTimeYThroughputFunc(files []string) {
+	for i, filename := range files {
+		msg := "Reading files from experiment"
+		fmt.Fprintf(os.Stderr, aurora.Magenta("%s %s into memory\n").String(), msg, filename)
+
+		allstarts, allends, _ := read([]string{filename})
+		starts, ends := allstarts[0], allends[0]
+
+		fmt.Printf(
+			"%s\n%s\t%s\n",
+			filename,
+			"second",
+			"throughput",
+		)
+
+		for j, commits := range throughput(starts, ends) {
+			fmt.Printf("%d\t%f\n", j+1, commits)
+		}
+
+		fmt.Fprintf(os.Stderr, aurora.Magenta("%s --> %03.0f%%\n").String(), strings.Repeat(" ", len(msg)-4), float64(i+1)/float64(len(files))*100)
 	}
 }
 
