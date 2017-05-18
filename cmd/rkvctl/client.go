@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -102,7 +101,6 @@ func newBackOff() *backoff.ExponentialBackOff {
 
 func notify(err error, d time.Duration) {
 	// TODO For debugging.
-	fmt.Println(err, d)
 }
 
 // ErrMaxInFlightReached indicates that there are too many messages in-flight.
