@@ -73,4 +73,16 @@
           go get github.com/s111/rkv
           mv ~/go/src/github.com/s111 ~/go/src/github.com/relab
           go install github.com/relab/rkv/cmd/...
-          reboot
+          sudo mkfs.ext4 -E nodiscard /dev/xvdb
+          sudo reboot
+
+    - name: Wait for the instances to boot by checking the ssh port
+      wait_for: host="{{item}}" port=22 delay=10 timeout=320 state=started
+      with_items: "{{groups['all']}}"
+
+    - name: Mount
+      become: true
+      shell:
+        cmd: |
+          mkdir -p /media/ephemeral0/tmp /media/ephemeral0/save
+          chown -R ec2-user:ec2-user /media/ephemeral0/tmp /media/ephemeral0/save
