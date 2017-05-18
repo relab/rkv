@@ -81,6 +81,32 @@ func main() {
 		once.Do(writeLatencies)
 	}()
 
+	if *add > 0 || *remove > 0 {
+		for _, server := range servers {
+			go func(server string) {
+				rndsrc := rand.New(rand.NewSource(seedStart))
+				zipf := rand.NewZipf(rndsrc, *zipfs, *zipfv, *keyspace)
+				c, err := newClient(&leader, []string{server}, zipf, s, (*payload-16)/2, lat)
+
+				if err != nil {
+					return
+				}
+
+				switch {
+				case *add > 0:
+					addServer(c, *add)
+					*forever = false
+					os.Exit(0)
+				case *remove > 0:
+					removeServer(c, *remove)
+					*forever = false
+					os.Exit(0)
+				}
+			}(server)
+		}
+		<-make(chan struct{})
+	}
+
 	for i := 0; i < *clients; i++ {
 		rndsrc := rand.New(rand.NewSource(seedStart + int64(i)))
 		zipf := rand.NewZipf(rndsrc, *zipfs, *zipfv, *keyspace)
@@ -94,19 +120,8 @@ func main() {
 				logrus.WithError(err).Panicln("Failed to create client")
 			}
 
-			switch {
-			case *add > 0:
-				addServer(c, *add)
-				*forever = false
-				return
-			case *remove > 0:
-				removeServer(c, *remove)
-				*forever = false
-				return
-			default:
-				wg.Add(1)
-				go runClient(c, &wg, *throughput, *reads, *forever, *dur, *count)
-			}
+			wg.Add(1)
+			go runClient(c, &wg, *throughput, *reads, *forever, *dur, *count)
 		}()
 	}
 
