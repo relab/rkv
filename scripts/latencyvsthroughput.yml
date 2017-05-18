@@ -12,8 +12,13 @@
     - name: Remove old server data
       shell: /bin/sh -c 'rm -rf /media/ephemeral0/tmp/*'
 
-    - name: Start servers
+    - name: Start servers 1-4
       shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -heartbeat 2ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      when: raftID != 5
+
+    - name: Start server 5
+      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -heartbeat 2ms -election 50s -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      when: raftID == 5
 
     - name: Sleep
       shell: sleep 2s
