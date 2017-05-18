@@ -72,6 +72,5 @@
           source ~/.bashrc
           go get github.com/s111/rkv
           mv ~/go/src/github.com/s111 ~/go/src/github.com/relab
-          go install github.com/relab/rkv/cmd/rkvd
-          go install github.com/relab/rkv/cmd/rkvctl
+          go install github.com/relab/rkv/cmd/...
           reboot
