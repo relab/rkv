@@ -114,8 +114,8 @@ type Raft struct {
 
 	stop chan struct{}
 
-	lat *raft.Latency
-	cat *raft.Catchup
+	lat   *raft.Latency
+	event *raft.Event
 }
 
 func (r *Raft) incCmd() {
@@ -140,7 +140,7 @@ type catchUpReq struct {
 }
 
 // NewRaft returns a new Raft given a configuration.
-func NewRaft(sm raft.StateMachine, cfg *Config, lat *raft.Latency, cat *raft.Catchup) *Raft {
+func NewRaft(sm raft.StateMachine, cfg *Config, lat *raft.Latency, event *raft.Event) *Raft {
 	err := validate(cfg)
 
 	// TODO Make NewRaft return error.
@@ -187,7 +187,7 @@ func NewRaft(sm raft.StateMachine, cfg *Config, lat *raft.Latency, cat *raft.Cat
 		metricsEnabled:   cfg.MetricsEnabled,
 		stop:             make(chan struct{}),
 		lat:              lat,
-		cat:              cat,
+		event:            event,
 	}
 
 	return r
@@ -594,6 +594,7 @@ func (r *Raft) startElection() {
 	term := r.currentTerm + 1
 
 	if !r.preElection {
+		r.event.Record(raft.EventElection)
 		// We are now a candidate. See Raft Paper Figure 2 -> Rules for Servers -> Candidates.
 		// #C1 Increment currentTerm.
 		r.currentTerm++
@@ -602,6 +603,8 @@ func (r *Raft) startElection() {
 		// #C2 Vote for self.
 		r.votedFor = r.id
 		r.storage.Set(raft.KeyVotedFor, r.id)
+	} else {
+		r.event.Record(raft.EventPreElection)
 	}
 
 	r.logger.WithFields(logrus.Fields{
