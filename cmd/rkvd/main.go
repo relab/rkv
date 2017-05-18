@@ -45,8 +45,8 @@ const (
 var (
 	bench             = flag.Bool("quiet", false, "Silence log output")
 	recover           = flag.Bool("recover", false, "Recover from stable storage")
-	batch             = flag.Bool("batch", true, "enable batching")
-	serverMetrics     = flag.Bool("servermetrics", true, "enable server-side metrics")
+	batch             = flag.Bool("batch", true, "Enable batching")
+	serverMetrics     = flag.Bool("servermetrics", true, "Enable server-side metrics")
 	electionTimeout   = flag.Duration("election", time.Second, "How long servers wait before starting an election")
 	heartbeatTimeout  = flag.Duration("heartbeat", 20*time.Millisecond, "How often a heartbeat should be sent")
 	entriesPerMsg     = flag.Uint64("entriespermsg", 64, "Entries per Appendentries message")
