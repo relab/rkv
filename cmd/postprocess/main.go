@@ -20,6 +20,7 @@ const (
 	first = iota
 	xThroughputYLatency
 	xTimeYThroughput
+	eventsFromStart
 	last
 )
 
@@ -33,17 +34,50 @@ func main() {
 		errexit("process must be " + strconv.Itoa(first) + " > x < " + strconv.Itoa(last))
 	}
 
-	if len(os.Args) < 3 {
-		errexit("no input files")
-	}
-
-	files := os.Args[2:]
-
 	switch process {
 	case xThroughputYLatency:
+		if len(os.Args) < 3 {
+			errexit("no input files")
+		}
+
+		files := os.Args[2:]
 		xThroughputYLatencyFunc(files)
 	case xTimeYThroughput:
+		if len(os.Args) < 3 {
+			errexit("no input files")
+		}
+
+		files := os.Args[2:]
 		xTimeYThroughputFunc(files)
+	case eventsFromStart:
+		if len(os.Args) != 4 {
+			errexit("no input file")
+		}
+
+		file := os.Args[3]
+		t := os.Args[2]
+		rstart, err := strconv.ParseInt(t, 10, 64)
+		if err != nil {
+			errexit("invalid start time")
+		}
+		start := time.Unix(0, rstart)
+		eventsFromStartFunc(start, file)
+	}
+}
+
+func eventsFromStartFunc(start time.Time, file string) {
+	events, ts := readEvents(file)
+
+	fmt.Printf(
+		"Filename: %s\nStart: %d\n%s\t%s\n",
+		file,
+		start.UnixNano(),
+		"event",
+		"time s",
+	)
+
+	for i, event := range events {
+		fmt.Printf("%s\t%f\n", event, ts[i].Sub(start).Seconds())
 	}
 }
 
@@ -56,8 +90,9 @@ func xTimeYThroughputFunc(files []string) {
 		starts, ends := allstarts[0], allends[0]
 
 		fmt.Printf(
-			"%s\n%s\t%s\n",
+			"Filename: %s\nStart: %d\n%s\t%s\n",
 			filename,
+			starts[0].UnixNano(),
 			"second",
 			"throughput",
 		)
@@ -223,8 +258,44 @@ func read(data []string) ([][]time.Time, [][]time.Time, [][]float64) {
 	return allstarts, allends, alldurs
 }
 
+func readEvents(file string) ([]string, []time.Time) {
+	f, err := os.Open(file)
+	if err != nil {
+		errexit("error opening file: " + file)
+	}
+
+	r := csv.NewReader(f)
+	// Skip header.
+	if _, err := r.Read(); err != nil {
+		panic(err)
+	}
+
+	var events []string
+	var ts []time.Time
+
+	for {
+		record, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			panic(err)
+		}
+
+		rts, err := strconv.ParseInt(record[1], 10, 64)
+		if err != nil {
+			panic(err)
+		}
+
+		ts = append(ts, time.Unix(0, rts))
+		events = append(events, record[0])
+	}
+
+	return events, ts
+}
+
 func errexit(msg string) {
 	fmt.Printf("postprocess: %s\n\nUsage:\n", msg)
-	fmt.Printf("\tpostprocess x test1_1.csv test1_2.csv test2_1.csv ..., where %d > x < %d\n", first, last)
+	fmt.Printf("\tpostprocess x [start time, if x = 3] test1_1.csv test1_2.csv test2_1.csv ..., where %d > x < %d\n", first, last)
 	os.Exit(1)
 }
