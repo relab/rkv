@@ -1,0 +1,64 @@
+- name: Startup
+  hosts: raft-servers
+  remote_user: ec2-user
+  gather_facts: false
+  ignore_errors: yes
+  vars:
+    backend: gorums
+    servers: "{{groups['raft-servers']|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
+    cluster: "1,2,3"
+
+  tasks:
+    - name: Remove old server data
+      shell: /bin/sh -c 'rm -rf /media/ephemeral0/tmp/*'
+
+    - name: Start servers
+      shell: cd /media/ephemeral0/work/; GOGC=off nohup rkvd -heartbeat 2ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+
+    - name: Sleep
+      shell: sleep 2s
+
+    - name: Kill leader after 25s and send a request to replace it with server 4
+      shell: sleep 25; if [[ $(getleaderid -cluster "{{servers}}") -eq "{{raftID}}" ]]; then killall -INT rkvd; GOGC=off rkvctl -cluster "{{servers}}" -add 4; fi
+      async: 40
+      poll: 0
+
+- name: Client
+  hosts: raft-clients
+  remote_user: ec2-user
+  gather_facts: false
+  ignore_errors: yes
+  vars:
+    servers: "{{groups['raft-servers']|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
+    throughput: 50
+    clients: 150
+    time: 60s
+    payload: 16
+
+  tasks:
+    - name: Remove old client data
+      shell: /bin/sh -c 'rm -rf /media/ephemeral0/tmp/*'
+
+    - name: Throughput
+      shell: cd /media/ephemeral0/tmp/; GOGC=off rkvctl -cluster "{{servers}}" -throughput "{{throughput|int}}" -clients "{{clients}}" -time "{{time}}" -payload "{{payload}}"
+      async: 120
+      poll: 5
+
+    - name: Move data
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+
+- name: Cleanup
+  hosts: raft-servers
+  remote_user: ec2-user
+  gather_facts: false
+  ignore_errors: yes
+
+  tasks:
+    - name: Stop servers
+      shell: killall -s INT rkvd
+
+    - name: Move latency data
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/latency_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+
+    - name: Move event data
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/event*.csv /media/ephemeral0/event_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
