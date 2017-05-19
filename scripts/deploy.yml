@@ -78,7 +78,7 @@
 
     - name: Wait for the instances to boot by checking the ssh port
       wait_for: host="{{item}}" port=22 delay=10 timeout=320 state=started
-      with_items: "{{groups['all']}}"
+      with_items: "{{groups['deploy']}}"
 
     - name: Mount
       become: true
