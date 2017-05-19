@@ -44,7 +44,7 @@ const (
 
 var (
 	bench             = flag.Bool("quiet", false, "Silence log output")
-	recover           = flag.Bool("recover", false, "Recover from stable storage")
+	restore           = flag.Bool("recover", false, "Recover from stable storage")
 	batch             = flag.Bool("batch", true, "Enable batching")
 	serverMetrics     = flag.Bool("servermetrics", true, "Enable server-side metrics")
 	electionTimeout   = flag.Duration("election", time.Second, "How long servers wait before starting an election")
@@ -183,6 +183,12 @@ func main() {
 
 	switch *backend {
 	case bgorums:
+		defer func() {
+			if r := recover(); r != nil {
+				<-make(chan struct{}) // Wait on files being written to disk.
+			}
+		}()
+
 		rungorums(logger, lis, grpcServer, *id, ids, nodes, lat, event)
 	case betcd:
 		runetcd(logger, lis, grpcServer, *id, ids, nodes, lat)
@@ -230,7 +236,7 @@ func runhashicorp(
 	}
 
 	path := fmt.Sprintf("hashicorp%.2d.bolt", id)
-	overwrite := !*recover
+	overwrite := !*restore
 	// Check if file already exists.
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
@@ -307,7 +313,7 @@ func runetcd(
 	dir := fmt.Sprintf("etcdwal%.2d", id)
 
 	switch {
-	case wal.Exist(dir) && !*recover:
+	case wal.Exist(dir) && !*restore:
 		if err := os.RemoveAll(dir); err != nil {
 			logger.Fatal(err)
 		}
@@ -393,7 +399,7 @@ func rungorums(
 	id uint64, ids []uint64, nodes []string,
 	lat *raft.Latency, event *raft.Event,
 ) {
-	storage, err := raft.NewFileStorage(fmt.Sprintf("db%.2d.bolt", id), !*recover)
+	storage, err := raft.NewFileStorage(fmt.Sprintf("db%.2d.bolt", id), !*restore)
 
 	if err != nil {
 		logger.Fatal(err)
