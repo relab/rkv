@@ -172,6 +172,8 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		<-c
+		grpcServer.Stop()
+		lis.Close()
 		once.Do(writeData)
 		os.Exit(1)
 	}()
