@@ -82,6 +82,9 @@
   gather_facts: false
 
   tasks:
+    - name: Sleep
+      shell: sleep 10s
+
     - name: Wait for the instances to boot by checking the ssh port
       wait_for: host="{{item}}" port=22 delay=10 timeout=320 state=started
       with_items: "{{groups['deploy']}}"
