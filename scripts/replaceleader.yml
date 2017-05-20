@@ -5,7 +5,7 @@
   ignore_errors: yes
   vars:
     backend: gorums
-    servers: "{{groups['raft-servers']|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
+    servers: "{{groups['raft-servers'][:4]|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
     cluster: "1,2,3"
 
   tasks:
@@ -29,7 +29,7 @@
   gather_facts: false
   ignore_errors: yes
   vars:
-    servers: "{{groups['raft-servers']|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
+    servers: "{{groups['raft-servers'][:4]|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
     throughput: 50
     clients: 150
     time: 60s
@@ -56,9 +56,12 @@
   tasks:
     - name: Stop servers
       shell: killall -s INT rkvd
+      when: raftID != 5
 
     - name: Move latency data
       shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_{{raftID}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+      when: raftID != 5
 
     - name: Move event data
       shell: /bin/sh -c 'mv /media/ephemeral0/tmp/event*.csv /media/ephemeral0/save/event_{{raftID}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+      when: raftID != 5
