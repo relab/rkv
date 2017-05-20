@@ -43,12 +43,19 @@ func main() {
 		files := os.Args[2:]
 		xThroughputYLatencyFunc(files)
 	case xTimeYThroughput:
-		if len(os.Args) < 3 {
+		if len(os.Args) < 4 {
 			errexit("no input files")
 		}
 
-		files := os.Args[2:]
-		xTimeYThroughputFunc(files)
+		files := os.Args[3:]
+		t := os.Args[2]
+		rstart, err := strconv.ParseInt(t, 10, 64)
+		if err != nil {
+			errexit("invalid start time")
+		}
+		start := time.Unix(0, rstart)
+
+		xTimeYThroughputFunc(start, files)
 	case eventsFromStart:
 		if len(os.Args) != 4 {
 			errexit("no input file")
@@ -81,7 +88,7 @@ func eventsFromStartFunc(start time.Time, file string) {
 	}
 }
 
-func xTimeYThroughputFunc(files []string) {
+func xTimeYThroughputFunc(start time.Time, files []string) {
 	for i, filename := range files {
 		msg := "Reading files from experiment"
 		fmt.Fprintf(os.Stderr, aurora.Magenta("%s %s into memory\n").String(), msg, filename)
@@ -97,12 +104,28 @@ func xTimeYThroughputFunc(files []string) {
 			"throughput",
 		)
 
-		for j, commits := range throughput(starts, ends) {
-			fmt.Printf("%d\t%f\n", j+1, commits)
+		for t, commits := range throughputwtime(starts, ends) {
+			fmt.Printf("%f\t%f\n", t.Sub(start).Seconds(), commits)
 		}
 
 		fmt.Fprintf(os.Stderr, aurora.Magenta("%s --> %03.0f%%\n").String(), strings.Repeat(" ", len(msg)-4), float64(i+1)/float64(len(files))*100)
 	}
+}
+
+func throughputwtime(starts, ends []time.Time) map[time.Time]float64 {
+	ts := make(map[time.Time]float64)
+	sec := ends[0].Truncate(time.Second).Add(time.Second)
+
+	for _, end := range ends {
+		if end.Before(sec) {
+			ts[sec]++
+			continue
+		}
+
+		sec = sec.Add(time.Second)
+	}
+
+	return ts
 }
 
 func xThroughputYLatencyFunc(files []string) {
@@ -296,6 +319,6 @@ func readEvents(file string) ([]string, []time.Time) {
 
 func errexit(msg string) {
 	fmt.Printf("postprocess: %s\n\nUsage:\n", msg)
-	fmt.Printf("\tpostprocess x [start time, if x = 3] test1_1.csv test1_2.csv test2_1.csv ..., where %d > x < %d\n", first, last)
+	fmt.Printf("\tpostprocess x [start time, if x = 2 or 3] test1_1.csv test1_2.csv test2_1.csv ..., where %d > x < %d\n", first, last)
 	os.Exit(1)
 }
