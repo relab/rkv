@@ -172,6 +172,7 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		<-c
+		event.Record(raft.EventTerminate)
 		once.Do(writeData)
 		os.Exit(1)
 	}()
@@ -183,9 +184,9 @@ func main() {
 	case bgorums:
 		rungorums(logger, lis, grpcServer, *id, ids, nodes, lat, event)
 	case betcd:
-		runetcd(logger, lis, grpcServer, *id, ids, nodes, lat)
+		runetcd(logger, lis, grpcServer, *id, ids, nodes, lat, event)
 	case bhashicorp:
-		runhashicorp(logger, lis, grpcServer, *id, ids, nodes, lat)
+		runhashicorp(logger, lis, grpcServer, *id, ids, nodes, lat, event)
 	}
 
 }
@@ -194,7 +195,7 @@ func runhashicorp(
 	logger logrus.FieldLogger,
 	lis net.Listener, grpcServer *grpc.Server,
 	id uint64, ids []uint64, nodes []string,
-	lat *raft.Latency,
+	lat *raft.Latency, event *raft.Event,
 ) {
 	servers := make([]hashic.Server, len(nodes))
 	for i, addr := range nodes {
@@ -266,7 +267,7 @@ func runhashicorp(
 		LeaderLeaseTimeout: *electionTimeout / 2,
 	}
 
-	node := hraft.NewRaft(logger, NewStore(), cfg, servers, trans, logs, logs, snaps, ids, lat)
+	node := hraft.NewRaft(logger, NewStore(), cfg, servers, trans, logs, logs, snaps, ids, lat, event)
 
 	service := NewService(node)
 	rkvpb.RegisterRKVServer(grpcServer, service)
@@ -278,7 +279,7 @@ func runetcd(
 	logger logrus.FieldLogger,
 	lis net.Listener, grpcServer *grpc.Server,
 	id uint64, ids []uint64, nodes []string,
-	lat *raft.Latency,
+	lat *raft.Latency, event *raft.Event,
 ) {
 	peers := make([]etcdraft.Peer, len(ids))
 
@@ -359,7 +360,7 @@ func runetcd(
 		*heartbeatTimeout,
 		!contains(id, ids),
 		nodes,
-		lat,
+		lat, event,
 	)
 
 	service := NewService(node)
