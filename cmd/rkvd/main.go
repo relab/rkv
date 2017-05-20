@@ -151,7 +151,7 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.MaxMsgSize(1024 * 1024 * 1024))
 
 	if *serverMetrics {
 		go func() {
