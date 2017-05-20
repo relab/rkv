@@ -51,6 +51,7 @@ var (
 	heartbeatTimeout  = flag.Duration("heartbeat", 20*time.Millisecond, "How often a heartbeat should be sent")
 	entriesPerMsg     = flag.Uint64("entriespermsg", 64, "Entries per Appendentries message")
 	catchupMultiplier = flag.Uint64("catchupmultiplier", 1024, "How many more times entries per message allowed during catch up")
+	cache             = flag.Int("cache", 1024*1024*64, "How many entries should be kept in memory") // ~1GB @ 16bytes per entry.
 )
 
 func main() {
@@ -398,7 +399,7 @@ func rungorums(
 		logger.Fatal(err)
 	}
 
-	storageWithCache := raft.NewCacheStorage(storage, 20000)
+	storageWithCache := raft.NewCacheStorage(storage, *cache)
 
 	node := raftgorums.NewRaft(NewStore(), &raftgorums.Config{
 		ID:                id,
