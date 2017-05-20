@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/armon/go-metrics"
+	gorumsraft "github.com/relab/raft"
 )
 
 const (
@@ -199,6 +200,7 @@ func (r *Raft) runFollower() {
 			} else {
 				r.logger.Printf(`[WARN] raft: Heartbeat timeout from %q reached, starting election`, lastLeader)
 				metrics.IncrCounter([]string{"raft", "transition", "heartbeat_timeout"}, 1)
+				r.event.Record(gorumsraft.EventElection)
 				r.setState(Candidate)
 				return
 			}
@@ -824,6 +826,7 @@ func (r *Raft) appendConfigurationEntry(future *configurationChangeFuture) {
 	index := future.Index()
 	r.configurations.latest = configuration
 	r.configurations.latestIndex = index
+	r.event.Record(gorumsraft.EventApplyConfiguration)
 	r.leaderState.commitment.setConfiguration(configuration)
 	r.startStopReplication()
 }
@@ -1071,6 +1074,7 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 				if entry.Index <= r.configurations.latestIndex {
 					r.configurations.latest = r.configurations.committed
 					r.configurations.latestIndex = r.configurations.committedIndex
+					r.event.Record(gorumsraft.EventApplyConfiguration)
 				}
 				newEntries = a.Entries[i:]
 				break
@@ -1107,6 +1111,7 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 		if r.configurations.latestIndex <= idx {
 			r.configurations.committed = r.configurations.latest
 			r.configurations.committedIndex = r.configurations.latestIndex
+			r.event.Record(gorumsraft.EventApplyConfiguration)
 		}
 		r.processLogs(idx, nil)
 		metrics.MeasureSince([]string{"raft", "rpc", "appendEntries", "processLogs"}, start)
@@ -1127,6 +1132,7 @@ func (r *Raft) processConfigurationLogEntry(entry *Log) {
 		r.configurations.committedIndex = r.configurations.latestIndex
 		r.configurations.latest = decodeConfiguration(entry.Data)
 		r.configurations.latestIndex = entry.Index
+		r.event.Record(gorumsraft.EventApplyConfiguration)
 	} else if entry.Type == LogAddPeerDeprecated || entry.Type == LogRemovePeerDeprecated {
 		r.configurations.committed = r.configurations.latest
 		r.configurations.committedIndex = r.configurations.latestIndex

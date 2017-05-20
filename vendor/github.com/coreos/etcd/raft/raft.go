@@ -26,6 +26,7 @@ import (
 	"time"
 
 	pb "github.com/coreos/etcd/raft/raftpb"
+	gorumsraft "github.com/relab/raft"
 )
 
 // None is a placeholder node ID used when there is no leader.
@@ -261,9 +262,11 @@ type raft struct {
 	step stepFunc
 
 	logger Logger
+
+	event *gorumsraft.Event
 }
 
-func newRaft(c *Config) *raft {
+func newRaft(c *Config, event *gorumsraft.Event) *raft {
 	if err := c.validate(); err != nil {
 		panic(err.Error())
 	}
@@ -295,6 +298,7 @@ func newRaft(c *Config) *raft {
 		checkQuorum:      c.CheckQuorum,
 		preVote:          c.PreVote,
 		readOnly:         newReadOnly(c.ReadOnlyOption),
+		event:            event,
 	}
 	for _, p := range peers {
 		r.prs[p] = &Progress{Next: 1, ins: newInflights(r.maxInflight)}
@@ -748,8 +752,10 @@ func (r *raft) Step(m pb.Message) error {
 
 			r.logger.Infof("%x is starting a new election at term %d", r.id, r.Term)
 			if r.preVote {
+				r.event.Record(gorumsraft.EventPreElection)
 				r.campaign(campaignPreElection)
 			} else {
+				r.event.Record(gorumsraft.EventElection)
 				r.campaign(campaignElection)
 			}
 		} else {

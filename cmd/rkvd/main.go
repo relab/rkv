@@ -172,7 +172,7 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		<-c
-		event.Record(raft.EventTerminate)
+		event.Record(raft.EventTerminated)
 		once.Do(writeData)
 		os.Exit(1)
 	}()

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"golang.org/x/net/context"
@@ -97,7 +98,7 @@ func NewRaft(logger logrus.FieldLogger,
 	if single {
 		rpeers = nil
 	}
-	w.n = etcdraft.StartNode(cfg, rpeers)
+	w.n = etcdraft.StartNode(cfg, rpeers, event)
 
 	ss := &stats.ServerStats{}
 	ss.Initialize()
@@ -191,10 +192,18 @@ func (w *Wrapper) ProposeConf(ctx context.Context, req *commonpb.ReconfRequest) 
 	w.propLock.Unlock()
 
 	cc := raftpb.ConfChange{
-		Type:    raftpb.ConfChangeType(req.ReconfType),
 		ID:      req.ServerID,
 		NodeID:  req.ServerID,
 		Context: w.lookup[req.ServerID],
+	}
+
+	switch req.ReconfType {
+	case commonpb.ReconfAdd:
+		w.event.Record(raft.EventProposeAddServer)
+		cc.Type = raftpb.ConfChangeAddNode
+	case commonpb.ReconfRemove:
+		w.event.Record(raft.EventProposeRemoveServer)
+		cc.Type = raftpb.ConfChangeRemoveNode
 	}
 
 	err := w.n.ProposeConfChange(ctx, cc)
@@ -227,6 +236,7 @@ func (w *Wrapper) run() {
 			if rd.SoftState != nil {
 				rmetrics.leader.Set(float64(rd.Lead))
 				if w.id == rd.Lead {
+					w.event.Record(raft.EventBecomeLeader)
 					atomic.StoreUint64(&w.leader, rd.Lead)
 				}
 				w.propLock.Lock()
@@ -315,18 +325,28 @@ func (w *Wrapper) handleConfChange(entry *raftpb.Entry) {
 
 	w.logger.WithField("cc", cc).Warnln("Applying conf change")
 	w.n.ApplyConfChange(cc)
+	w.event.Record(raft.EventApplyConfiguration)
 	switch cc.Type {
 	case raftpb.ConfChangeAddNode:
 		if len(cc.Context) > 0 {
+			w.event.Record(raft.EventAdded)
 			w.transport.AddPeer(types.ID(cc.NodeID), []string{string(cc.Context)})
 		}
 	case raftpb.ConfChangeRemoveNode:
 		tid := types.ID(cc.NodeID)
 		if tid == w.transport.ID {
+			w.event.Record(raft.EventRemoved)
 			w.logger.Warnln("Shutting down")
-			os.Exit(0)
+			p, err := os.FindProcess(os.Getpid())
+			if err != nil {
+				os.Exit(1)
+			}
+			if err := p.Signal(syscall.SIGINT); err != nil {
+				os.Exit(1)
+			}
 		}
 		if w.transport.Get(tid) != nil {
+			w.event.Record(raft.EventRemoved)
 			w.transport.RemovePeer(tid)
 		}
 	}

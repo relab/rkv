@@ -1,5 +1,5 @@
 hash: 5cb8217193128bfa52c03a53273af89bd9d54e0a91bd05a4c2f8fe58855464c8
-updated: 2017-05-20T12:09:55.135898967+02:00
+updated: 2017-05-20T14:33:36.826611892+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 93f237eba9b0602f3e73710416558854a81d9337
@@ -12,7 +12,7 @@ imports:
 - name: github.com/cenkalti/backoff
   version: 5d150e7eec023ce7a124856b37c68e54b4050ac7
 - name: github.com/coreos/etcd
-  version: 7e6d876385396bf3ea8f1b58ab24b697a3d9f5d8
+  version: 8c1dbb328f85079088dc97d1d0c30f59585c28b1
   repo: https://github.com/s111/etcd.git
   vcs: git
   subpackages:
@@ -75,7 +75,7 @@ imports:
   subpackages:
   - simplelru
 - name: github.com/hashicorp/raft
-  version: 939ebd2103731c2f38c7964d8dd24af0e1b26dc3
+  version: b63dad49b45634b0c0765e4891c8a0feadea603e
   repo: https://github.com/s111/hashicorpraft.git
   vcs: git
 - name: github.com/hashicorp/raft-boltdb
@@ -112,7 +112,7 @@ imports:
   repo: https://github.com/s111/gorums.git
   vcs: git
 - name: github.com/relab/raft
-  version: 9fbe0a9691e1c1a59cda1732608b63fd9078f766
+  version: e1666e89c758f6adff542d68fe64494031e91582
   subpackages:
   - commonpb
   - etcd

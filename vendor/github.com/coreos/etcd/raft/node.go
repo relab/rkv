@@ -18,6 +18,7 @@ import (
 	"errors"
 
 	pb "github.com/coreos/etcd/raft/raftpb"
+	gorumsraft "github.com/relab/raft"
 	"golang.org/x/net/context"
 )
 
@@ -174,8 +175,8 @@ type Peer struct {
 
 // StartNode returns a new Node given configuration and a list of raft peers.
 // It appends a ConfChangeAddNode entry for each given peer to the initial log.
-func StartNode(c *Config, peers []Peer) Node {
-	r := newRaft(c)
+func StartNode(c *Config, peers []Peer, event *gorumsraft.Event) Node {
+	r := newRaft(c, event)
 	// become the follower at term 1 and apply initial configuration
 	// entries of term 1
 	r.becomeFollower(1, None)
@@ -216,7 +217,7 @@ func StartNode(c *Config, peers []Peer) Node {
 // If the caller has an existing state machine, pass in the last log index that
 // has been applied to it; otherwise use zero.
 func RestartNode(c *Config) Node {
-	r := newRaft(c)
+	r := newRaft(c, nil)
 
 	n := newNode()
 	n.logger = c.Logger

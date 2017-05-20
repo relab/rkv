@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/armon/go-metrics"
+	gorumsraft "github.com/relab/raft"
 )
 
 var (
@@ -156,6 +157,8 @@ type Raft struct {
 	// is indexed by an artificial ID which is used for deregistration.
 	observersLock sync.RWMutex
 	observers     map[uint64]*Observer
+
+	event *gorumsraft.Event
 }
 
 // BootstrapCluster initializes a server's storage with the given cluster
@@ -387,7 +390,7 @@ func HasExistingState(logs LogStore, stable StableStore, snaps SnapshotStore) (b
 // as implementations of various interfaces that are required. If we have any
 // old state, such as snapshots, logs, peers, etc, all those will be restored
 // when creating the Raft node.
-func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps SnapshotStore, trans Transport) (*Raft, error) {
+func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps SnapshotStore, trans Transport, event *gorumsraft.Event) (*Raft, error) {
 	// Validate the configuration.
 	if err := ValidateConfig(conf); err != nil {
 		return nil, err
@@ -461,6 +464,7 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 		configurationsCh:      make(chan *configurationsFuture, 8),
 		bootstrapCh:           make(chan *bootstrapFuture),
 		observers:             make(map[uint64]*Observer),
+		event:                 event,
 	}
 
 	// Initialize as a follower.

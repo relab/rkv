@@ -76,7 +76,7 @@ func NewRawNode(config *Config, peers []Peer) (*RawNode, error) {
 	if config.ID == 0 {
 		panic("config.ID must not be zero")
 	}
-	r := newRaft(config)
+	r := newRaft(config, nil)
 	rn := &RawNode{
 		raft: r,
 	}
