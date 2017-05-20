@@ -52,7 +52,7 @@
       poll: 5
 
     - name: Move data
-      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_0_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
 
 - name: Cleanup
   hosts: raft-servers
@@ -65,7 +65,7 @@
       shell: killall -s INT rkvd
 
     - name: Move latency data
-      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_{{raftID}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
 
     - name: Move event data
-      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/event*.csv /media/ephemeral0/save/event_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/event*.csv /media/ephemeral0/save/event_{{raftID}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
