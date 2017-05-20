@@ -60,7 +60,7 @@
         - git
         - htop
 
-    - name: Install
+    - name: Install programs and format SSD
       shell:
         cmd: |
           cd $HOME
