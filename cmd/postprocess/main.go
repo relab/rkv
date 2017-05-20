@@ -104,8 +104,17 @@ func xTimeYThroughputFunc(start time.Time, files []string) {
 			"throughput",
 		)
 
-		for t, commits := range throughputwtime(starts, ends) {
-			fmt.Printf("%f\t%f\n", t.Sub(start).Seconds(), commits)
+		ts := throughputwtime(starts, ends)
+		var secs []time.Time
+
+		for sec := range ts {
+			secs = append(secs, sec)
+		}
+
+		sort.Sort(TimeSlice(secs))
+
+		for _, sec := range secs {
+			fmt.Printf("%f\t%f\n", sec.Sub(start).Seconds(), ts[sec])
 		}
 
 		fmt.Fprintf(os.Stderr, aurora.Magenta("%s --> %03.0f%%\n").String(), strings.Repeat(" ", len(msg)-4), float64(i+1)/float64(len(files))*100)
@@ -322,3 +331,10 @@ func errexit(msg string) {
 	fmt.Printf("\tpostprocess x [start time, if x = 2 or 3] test1_1.csv test1_2.csv test2_1.csv ..., where %d > x < %d\n", first, last)
 	os.Exit(1)
 }
+
+// TimeSlice attaches the methods of sort.Interface to []time.Time, sorting in increasing order.
+type TimeSlice []time.Time
+
+func (p TimeSlice) Len() int           { return len(p) }
+func (p TimeSlice) Less(i, j int) bool { return p[i].Before(p[j]) }
+func (p TimeSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
