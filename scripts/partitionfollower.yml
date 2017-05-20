@@ -23,9 +23,9 @@
     - name: Sleep
       shell: sleep 2s
 
-    - name: Partition follower for 5s after 25s
+    - name: Partition follower for 5s after 35s
       become: true
-      shell: sleep 25; if [[ $(getleaderid -cluster "{{servers}}") -eq "{{raftID}}" ]]; then iptables -F; iptables -A INPUT -p tcp ! -s 152.94.0.0/16 --match multiport ! --dports 22 -m statistic --mode random --probability 1.0 -j DROP; sleep 5; iptables -F; fi
+      shell: sleep 35; if [[ $(getleaderid -cluster "{{servers}}") -eq "{{raftID}}" ]]; then iptables -F; iptables -A INPUT -p tcp ! -s 152.94.0.0/16 --match multiport ! --dports 22 -m statistic --mode random --probability 1.0 -j DROP; sleep 5; iptables -F; fi
       async: 40
       poll: 0
       when: raftID == groups['raft-servers']|length

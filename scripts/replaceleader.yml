@@ -18,8 +18,8 @@
     - name: Sleep
       shell: sleep 2s
 
-    - name: Kill leader after 25s and send a request to replace it with server 4
-      shell: sleep 25; if [[ $(getleaderid -cluster "{{servers}}") -eq "{{raftID}}" ]]; then killall -INT rkvd; GOGC=off rkvctl -cluster "{{servers}}" -add 4; fi
+    - name: Kill leader after 35s and send a request to replace it with server 4
+      shell: sleep 35; if [[ $(getleaderid -cluster "{{servers}}") -eq "{{raftID}}" ]]; then killall -INT rkvd; GOGC=off rkvctl -cluster "{{servers}}" -add 4; fi
       async: 40
       poll: 0
 
