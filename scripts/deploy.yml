@@ -76,10 +76,21 @@
           sudo mkfs.ext4 -E nodiscard /dev/xvdb
           sudo reboot
 
+- name: Wait for instances to reboot
+  hosts: local
+  connection: local
+  gather_facts: false
+
+  tasks:
     - name: Wait for the instances to boot by checking the ssh port
       wait_for: host="{{item}}" port=22 delay=10 timeout=320 state=started
       with_items: "{{groups['deploy']}}"
 
+- name: Allow user to access instances SSDs
+  hosts: deploy
+  remote_user: ec2-user
+
+  tasks:
     - name: Mount
       become: true
       shell:
