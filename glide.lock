@@ -1,5 +1,5 @@
 hash: da36d60527dbe95bfda8e8c798d149773f33f9ecf162422aba30b7cc486517c1
-updated: 2017-05-18T13:48:30.426043904+02:00
+updated: 2017-05-20T11:39:54.358786512+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 93f237eba9b0602f3e73710416558854a81d9337
@@ -131,7 +131,7 @@ imports:
   - lex/httplex
   - trace
 - name: golang.org/x/sys
-  version: e62c3de784db939836898e5c19ffd41bece347da
+  version: a2e06a18b0d52d8cb2010e04b372a1965d8e3439
   subpackages:
   - unix
 - name: golang.org/x/text
