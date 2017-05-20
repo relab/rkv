@@ -74,7 +74,12 @@
           mv ~/go/src/github.com/s111 ~/go/src/github.com/relab
           go install github.com/relab/rkv/cmd/...
           sudo mkfs.ext4 -E nodiscard /dev/xvdb
-          sudo reboot
+
+    - name: Reboot
+      become: true
+      shell: reboot && sleep 1
+      async: 0
+      poll: 1
 
 - name: Wait for instances to reboot
   hosts: local
