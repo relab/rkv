@@ -3,6 +3,7 @@ package main
 import (
 	"golang.org/x/net/context"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/relab/raft"
 	"github.com/relab/raft/commonpb"
 	"github.com/relab/rkv/rkvpb"
@@ -13,14 +14,16 @@ type Service struct {
 	raft   raft.Raft
 	sem    chan struct{} // Forces requests to be handled in order. len(sema) = concurrent requests.
 	leader chan struct{}
+	logger logrus.FieldLogger
 }
 
 // NewService initializes and returns a new Service.
-func NewService(raft raft.Raft, leader chan struct{}) *Service {
+func NewService(logger logrus.FieldLogger, raft raft.Raft, leader chan struct{}) *Service {
 	return &Service{
 		raft:   raft,
 		sem:    make(chan struct{}, 50000),
 		leader: leader,
+		logger: logger,
 	}
 }
 
@@ -155,8 +158,10 @@ func (s *Service) Reconf(ctx context.Context, req *commonpb.ReconfRequest) (*com
 // ReconfOnBecome implements RKVServer.
 func (s *Service) ReconfOnBecome(ctx context.Context, req *commonpb.ReconfRequest) (*commonpb.ReconfResponse, error) {
 	s.sem <- struct{}{}
+	s.logger.Warnln("Waiting on becoming leader")
 	select {
 	case <-s.leader:
+		s.logger.Warnln("Became leader, proceeding...")
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

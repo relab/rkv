@@ -274,7 +274,7 @@ func runhashicorp(
 
 	node := hraft.NewRaft(logger, NewStore(), cfg, servers, trans, logs, logs, snaps, ids, lat, event, leaderOut)
 
-	service := NewService(node, leaderOut)
+	service := NewService(logger, node, leaderOut)
 	rkvpb.RegisterRKVServer(grpcServer, service)
 
 	logger.Fatal(grpcServer.Serve(lis))
@@ -371,7 +371,7 @@ func runetcd(
 		leaderOut,
 	)
 
-	service := NewService(node, leaderOut)
+	service := NewService(logger, node, leaderOut)
 	rkvpb.RegisterRKVServer(grpcServer, service)
 
 	go func() {
@@ -425,7 +425,7 @@ func rungorums(
 		MetricsEnabled:    true,
 	}, lat, event, leaderOut)
 
-	service := NewService(node, leaderOut)
+	service := NewService(logger, node, leaderOut)
 	rkvpb.RegisterRKVServer(grpcServer, service)
 
 	go func() {
