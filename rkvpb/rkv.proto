@@ -13,6 +13,7 @@ service RKV {
   rpc Insert(InsertRequest) returns (InsertResponse);
   rpc Lookup(LookupRequest) returns (LookupResponse);
   rpc Reconf(commonpb.ReconfRequest) returns (commonpb.ReconfResponse);
+  rpc ReconfOnBecome(commonpb.ReconfRequest) returns (commonpb.ReconfResponse);
 }
 
 enum CmdType {

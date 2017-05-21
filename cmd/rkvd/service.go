@@ -10,15 +10,17 @@ import (
 
 // Service exposes a key-value store as a gRPC service.
 type Service struct {
-	raft raft.Raft
-	sem  chan struct{} // Forces requests to be handled in order. len(sema) = concurrent requests.
+	raft   raft.Raft
+	sem    chan struct{} // Forces requests to be handled in order. len(sema) = concurrent requests.
+	leader chan struct{}
 }
 
 // NewService initializes and returns a new Service.
-func NewService(raft raft.Raft) *Service {
+func NewService(raft raft.Raft, leader chan struct{}) *Service {
 	return &Service{
-		raft: raft,
-		sem:  make(chan struct{}, 50000),
+		raft:   raft,
+		sem:    make(chan struct{}, 50000),
+		leader: leader,
 	}
 }
 
@@ -132,6 +134,32 @@ func (s *Service) Lookup(ctx context.Context, req *rkvpb.LookupRequest) (*rkvpb.
 // Reconf implements RKVServer.
 func (s *Service) Reconf(ctx context.Context, req *commonpb.ReconfRequest) (*commonpb.ReconfResponse, error) {
 	s.sem <- struct{}{}
+	future, err := s.raft.ProposeConf(ctx, req)
+	<-s.sem
+
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case res := <-future.ResultCh():
+		if err, ok := res.Value.(error); ok {
+			return nil, err
+		}
+		return res.Value.(*commonpb.ReconfResponse), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// ReconfOnBecome implements RKVServer.
+func (s *Service) ReconfOnBecome(ctx context.Context, req *commonpb.ReconfRequest) (*commonpb.ReconfResponse, error) {
+	s.sem <- struct{}{}
+	select {
+	case <-s.leader:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	future, err := s.raft.ProposeConf(ctx, req)
 	<-s.sem
 

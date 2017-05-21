@@ -1,5 +1,5 @@
 hash: 5cb8217193128bfa52c03a53273af89bd9d54e0a91bd05a4c2f8fe58855464c8
-updated: 2017-05-21T14:21:43.924526293+02:00
+updated: 2017-05-21T19:54:23.154713075+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 93f237eba9b0602f3e73710416558854a81d9337
@@ -112,7 +112,7 @@ imports:
   repo: https://github.com/s111/gorums.git
   vcs: git
 - name: github.com/relab/raft
-  version: 1734eeb8e0976a1932d94896e53f9af9382e57e6
+  version: 19d17444b0f1f29fe1867fdf2e53ece471cd8ac3
   subpackages:
   - commonpb
   - etcd
@@ -135,7 +135,7 @@ imports:
   - lex/httplex
   - trace
 - name: golang.org/x/sys
-  version: a2e06a18b0d52d8cb2010e04b372a1965d8e3439
+  version: dbc2be9168a660ef302e04b6ff6406de6f967473
   subpackages:
   - unix
 - name: golang.org/x/text
