@@ -34,6 +34,8 @@ type client struct {
 
 	payload int
 	lat     *raft.Latency
+
+	ensure bool
 }
 
 // z wraps rand.Zipf with a mutex.
@@ -49,7 +51,7 @@ func (zz *z) Uint64() uint64 {
 	return i
 }
 
-func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats, payload int, lat *raft.Latency) (*client, error) {
+func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats, payload int, lat *raft.Latency, ensure bool) (*client, error) {
 	conns := make([]rkvpb.RKVClient, len(servers))
 
 	for i, server := range servers {
@@ -69,6 +71,7 @@ func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats, payl
 		s:       s,
 		payload: payload,
 		lat:     lat,
+		ensure:  ensure,
 	}
 
 	res, err := c.register()
@@ -123,10 +126,17 @@ func (c *client) reconf(serverID uint64, reconfType commonpb.ReconfType) (*commo
 	op := func() error {
 		var err error
 		prevLeader := c.getLeader()
-		res, err = c.servers[prevLeader].Reconf(ctx, &commonpb.ReconfRequest{
-			ServerID:   serverID,
-			ReconfType: reconfType,
-		})
+		if c.ensure {
+			res, err = c.servers[prevLeader].ReconfOnBecome(ctx, &commonpb.ReconfRequest{
+				ServerID:   serverID,
+				ReconfType: reconfType,
+			})
+		} else {
+			res, err = c.servers[prevLeader].Reconf(ctx, &commonpb.ReconfRequest{
+				ServerID:   serverID,
+				ReconfType: reconfType,
+			})
+		}
 
 		if err != nil {
 			c.nextLeader(prevLeader)

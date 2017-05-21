@@ -90,7 +90,7 @@ func main() {
 			go func(server string) {
 				rndsrc := rand.New(rand.NewSource(seedStart))
 				zipf := rand.NewZipf(rndsrc, *zipfs, *zipfv, *keyspace)
-				c, err := newClient(&leader, []string{server}, zipf, s, (*payload-16)/2, lat)
+				c, err := newClient(&leader, []string{server}, zipf, s, (*payload-16)/2, lat, *ensure)
 
 				if err != nil {
 					return
@@ -118,7 +118,7 @@ func main() {
 		go func() {
 			defer wclients.Done()
 
-			c, err := newClient(&leader, servers, zipf, s, (*payload-16)/2, lat)
+			c, err := newClient(&leader, servers, zipf, s, (*payload-16)/2, lat, false)
 
 			if err != nil {
 				logrus.WithError(err).Panicln("Failed to create client")
@@ -140,6 +140,7 @@ func main() {
 }
 
 func addServer(c *client, serverID uint64) {
+START:
 	res, err := c.addServer(serverID)
 
 	logger := logrus.WithError(err)
@@ -148,8 +149,14 @@ func addServer(c *client, serverID uint64) {
 	case commonpb.ReconfOK:
 		logger.Println("Successfully added server")
 	case commonpb.ReconfNotLeader:
+		if *ensure {
+			goto START
+		}
 		logger.Warnln("Not leader")
 	case commonpb.ReconfTimeout:
+		if *ensure {
+			goto START
+		}
 		logger.Warnln("Either adding server took too long, or the proposed configuration is invalid")
 	default:
 		logger.Panicln("invalid reconf status")
@@ -160,18 +167,20 @@ func removeServer(c *client, serverID uint64) {
 START:
 	res, err := c.removeServer(serverID)
 
-	if err != nil && *ensure {
-		goto START
-	}
-
 	logger := logrus.WithError(err)
 
 	switch res.Status {
 	case commonpb.ReconfOK:
 		logger.Println("Successfully removed server")
 	case commonpb.ReconfNotLeader:
+		if *ensure {
+			goto START
+		}
 		logger.Warnln("Not leader")
 	case commonpb.ReconfTimeout:
+		if *ensure {
+			goto START
+		}
 		logger.Warnln("Either removing server took too long, or the proposed configuration is invalid")
 	default:
 		logger.Panicln("invalid reconf status")
