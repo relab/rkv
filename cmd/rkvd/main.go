@@ -260,7 +260,7 @@ func runhashicorp(
 		LocalID:            servers[id-1].ID,
 		ProtocolVersion:    hashic.ProtocolVersionMax,
 		HeartbeatTimeout:   *electionTimeout,
-		ElectionTimeout:    10 * *electionTimeout,
+		ElectionTimeout:    *electionTimeout,
 		CommitTimeout:      *heartbeatTimeout,
 		MaxAppendEntries:   int(*entriesPerMsg),
 		ShutdownOnRemove:   true,
