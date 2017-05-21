@@ -74,7 +74,7 @@ func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats, payl
 		ensure:  ensure,
 	}
 
-	if ensure {
+	if !ensure {
 		res, err := c.register()
 
 		if err != nil {
