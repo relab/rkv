@@ -74,14 +74,16 @@ func newClient(leader *uint64, servers []string, zipf *rand.Zipf, s *stats, payl
 		ensure:  ensure,
 	}
 
-	res, err := c.register()
+	if ensure {
+		res, err := c.register()
 
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
+
+		c.id = res.ClientID
+		c.seq = 1
 	}
-
-	c.id = res.ClientID
-	c.seq = 1
 
 	return c, nil
 }
