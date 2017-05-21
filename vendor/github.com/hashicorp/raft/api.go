@@ -158,7 +158,8 @@ type Raft struct {
 	observersLock sync.RWMutex
 	observers     map[uint64]*Observer
 
-	event *gorumsraft.Event
+	event       *gorumsraft.Event
+	checkQuorum bool
 }
 
 // BootstrapCluster initializes a server's storage with the given cluster
@@ -390,7 +391,7 @@ func HasExistingState(logs LogStore, stable StableStore, snaps SnapshotStore) (b
 // as implementations of various interfaces that are required. If we have any
 // old state, such as snapshots, logs, peers, etc, all those will be restored
 // when creating the Raft node.
-func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps SnapshotStore, trans Transport, event *gorumsraft.Event) (*Raft, error) {
+func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps SnapshotStore, trans Transport, event *gorumsraft.Event, checkQuorum bool) (*Raft, error) {
 	// Validate the configuration.
 	if err := ValidateConfig(conf); err != nil {
 		return nil, err
@@ -465,6 +466,7 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 		bootstrapCh:           make(chan *bootstrapFuture),
 		observers:             make(map[uint64]*Observer),
 		event:                 event,
+		checkQuorum:           checkQuorum,
 	}
 
 	// Initialize as a follower.

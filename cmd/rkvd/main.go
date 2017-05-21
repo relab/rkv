@@ -270,13 +270,9 @@ func runhashicorp(
 		LeaderLeaseTimeout: *electionTimeout / 2,
 	}
 
-	if !*checkQuorum {
-		cfg.LeaderLeaseTimeout = time.Hour
-	}
-
 	leaderOut := make(chan struct{})
 
-	node := hraft.NewRaft(logger, NewStore(), cfg, servers, trans, logs, logs, snaps, ids, lat, event, leaderOut, id)
+	node := hraft.NewRaft(logger, NewStore(), cfg, servers, trans, logs, logs, snaps, ids, lat, event, leaderOut, id, *checkQuorum)
 
 	service := NewService(logger, node, leaderOut)
 	rkvpb.RegisterRKVServer(grpcServer, service)

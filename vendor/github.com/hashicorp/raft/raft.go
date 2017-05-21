@@ -673,7 +673,7 @@ func (r *Raft) checkLeaderLease() time.Duration {
 
 	// Verify we can contact a quorum
 	quorum := r.quorumSize()
-	if contacted < quorum {
+	if contacted < quorum && r.checkQuorum {
 		r.logger.Printf("[WARN] raft: Failed to contact quorum of nodes, stepping down")
 		r.setState(Follower)
 		metrics.IncrCounter([]string{"raft", "transition", "leader_lease_timeout"}, 1)
