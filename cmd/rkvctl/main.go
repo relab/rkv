@@ -99,13 +99,10 @@ func main() {
 				switch {
 				case *add > 0:
 					addServer(c, *add)
-					*forever = false
-					os.Exit(0)
 				case *remove > 0:
 					removeServer(c, *remove)
-					*forever = false
-					os.Exit(0)
 				}
+				os.Exit(0)
 			}(server)
 		}
 		<-make(chan struct{})
