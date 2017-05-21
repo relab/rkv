@@ -1074,7 +1074,6 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 				if entry.Index <= r.configurations.latestIndex {
 					r.configurations.latest = r.configurations.committed
 					r.configurations.latestIndex = r.configurations.committedIndex
-					r.event.Record(gorumsraft.EventApplyConfiguration)
 				}
 				newEntries = a.Entries[i:]
 				break
