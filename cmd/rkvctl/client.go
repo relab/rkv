@@ -277,9 +277,6 @@ func (c *client) insert() (*rkvpb.InsertResponse, error) {
 }
 
 func (c *client) nextLeader(prevLeader uint64) {
-	if c.ensure {
-		return
-	}
 	newLeader := (prevLeader + 1) % uint64(len(c.servers))
 	atomic.CompareAndSwapUint64(c.l, prevLeader, newLeader)
 }
