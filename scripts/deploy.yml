@@ -77,9 +77,9 @@
 
     - name: Reboot
       become: true
-      shell: reboot && sleep 1
-      async: 0
-      poll: 1
+      shell: sleep 2 && reboot
+      async: 1
+      poll: 0
 
 - name: Wait for instances to reboot
   hosts: local
@@ -88,7 +88,7 @@
 
   tasks:
     - name: Sleep
-      shell: sleep 10s
+      shell: sleep 20s
 
     - name: Wait for the instances to boot by checking the ssh port
       wait_for: host="{{item}}" port=22 delay=10 timeout=320 state=started
