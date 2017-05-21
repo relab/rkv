@@ -53,6 +53,7 @@ var (
 	catchupMultiplier = flag.Uint64("catchupmultiplier", 1024, "How many more times entries per message allowed during catch up")
 	cache             = flag.Int("cache", 1024*1024*64, "How many entries should be kept in memory") // ~1GB @ 16bytes per entry.
 	maxgrpc           = flag.Int("maxgrpc", 128<<20, "Max GRPC message size")                        // ~128MB.
+	checkQuorum       = flag.Bool("checkquorum", false, "Require a quorum of responses to a heartbeat to retain leadership")
 )
 
 func main() {
@@ -269,6 +270,10 @@ func runhashicorp(
 		LeaderLeaseTimeout: *electionTimeout / 2,
 	}
 
+	if !*checkQuorum {
+		cfg.LeaderLeaseTimeout = time.Hour
+	}
+
 	node := hraft.NewRaft(logger, NewStore(), cfg, servers, trans, logs, logs, snaps, ids, lat, event)
 
 	service := NewService(node)
@@ -354,7 +359,7 @@ func runetcd(
 			// etcdserver says: Never overflow the rafthttp buffer,
 			// which is 4096. We keep the same constant.
 			MaxInflightMsgs: 4096 / 8,
-			CheckQuorum:     true,
+			CheckQuorum:     *checkQuorum,
 			PreVote:         true,
 			Logger:          logger,
 		},
@@ -413,6 +418,7 @@ func rungorums(
 		EntriesPerMsg:     *entriesPerMsg,
 		CatchupMultiplier: *catchupMultiplier,
 		Logger:            logger,
+		CheckQuorum:       *checkQuorum,
 		MetricsEnabled:    true,
 	}, lat, event)
 

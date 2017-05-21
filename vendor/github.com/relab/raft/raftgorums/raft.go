@@ -26,12 +26,9 @@ const (
 	Leader
 )
 
-// Timeouts in milliseconds.
-const (
-	// How long we wait for an answer.
-	TCPConnect   = 50000
-	TCPHeartbeat = 2000
-)
+// TCPConnect specifies how long the manager will attempt to establish a
+// connection to all servers.
+const TCPConnect = 50000
 
 // None represents no server.
 const None = 0
@@ -110,6 +107,7 @@ type Raft struct {
 
 	logger logrus.FieldLogger
 
+	checkQuorum    bool
 	metricsEnabled bool
 
 	stop chan struct{}
@@ -184,6 +182,7 @@ func NewRaft(sm raft.StateMachine, cfg *Config, lat *raft.Latency, event *raft.E
 		cureqout:         make(chan *catchUpReq, 16),
 		toggle:           make(chan struct{}),
 		logger:           cfg.Logger.WithField("raftid", cfg.ID),
+		checkQuorum:      cfg.CheckQuorum,
 		metricsEnabled:   cfg.MetricsEnabled,
 		stop:             make(chan struct{}),
 		lat:              lat,
