@@ -271,7 +271,7 @@ func runhashicorp(
 	}
 
 	if !*checkQuorum {
-		cfg.LeaderLeaseTimeout = *electionTimeout
+		cfg.LeaderLeaseTimeout = time.Hour
 	}
 
 	leaderOut := make(chan struct{})
