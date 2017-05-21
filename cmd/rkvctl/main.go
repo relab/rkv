@@ -87,10 +87,10 @@ func main() {
 
 	if *add > 0 || *remove > 0 {
 		for i, server := range servers {
-			go func(id uint64, server string) {
+			go func(cleader uint64, server string) {
 				rndsrc := rand.New(rand.NewSource(seedStart))
 				zipf := rand.NewZipf(rndsrc, *zipfs, *zipfv, *keyspace)
-				c, err := newClient(&id, []string{server}, zipf, s, (*payload-16)/2, lat, *ensure)
+				c, err := newClient(&cleader, []string{server}, zipf, s, (*payload-16)/2, lat, *ensure)
 
 				if err != nil {
 					return
@@ -103,7 +103,7 @@ func main() {
 					removeServer(c, *remove)
 				}
 				os.Exit(0)
-			}(uint64(i+1), server)
+			}(uint64(i), server)
 		}
 		<-make(chan struct{})
 	}
