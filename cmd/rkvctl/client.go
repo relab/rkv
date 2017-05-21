@@ -148,7 +148,7 @@ func (c *client) reconf(serverID uint64, reconfType commonpb.ReconfType) (*commo
 		return nil
 	}
 
-	err := backoff.RetryNotify(op, backoff.WithContext(&backoff.ZeroBackOff{}, ctx), notify)
+	err := backoff.RetryNotify(op, backoff.WithContext(backoff.NewConstantBackOff(10*time.Second), ctx), notify)
 
 	return res, err
 }
