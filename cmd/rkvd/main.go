@@ -52,6 +52,7 @@ var (
 	entriesPerMsg     = flag.Uint64("entriespermsg", 64, "Entries per Appendentries message")
 	catchupMultiplier = flag.Uint64("catchupmultiplier", 1024, "How many more times entries per message allowed during catch up")
 	cache             = flag.Int("cache", 1024*1024*64, "How many entries should be kept in memory") // ~1GB @ 16bytes per entry.
+	maxgrpc           = flag.Int("maxgrpc", 128<<20, "Max GRPC message size")                        // ~128MB.
 )
 
 func main() {
@@ -151,7 +152,7 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	grpcServer := grpc.NewServer(grpc.MaxMsgSize(1024 * 1024 * 1024))
+	grpcServer := grpc.NewServer(grpc.MaxMsgSize(*maxgrpc))
 
 	if *serverMetrics {
 		go func() {
