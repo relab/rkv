@@ -1110,7 +1110,6 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 		if r.configurations.latestIndex <= idx {
 			r.configurations.committed = r.configurations.latest
 			r.configurations.committedIndex = r.configurations.latestIndex
-			r.event.Record(gorumsraft.EventApplyConfiguration)
 		}
 		r.processLogs(idx, nil)
 		metrics.MeasureSince([]string{"raft", "rpc", "appendEntries", "processLogs"}, start)
