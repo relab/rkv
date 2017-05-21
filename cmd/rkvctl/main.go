@@ -20,6 +20,10 @@ import (
 // Arbitrary seed.
 const seedStart int64 = 99
 
+var (
+	ensure = flag.Bool("ensure", false, "Keep trying until at least on command is successful")
+)
+
 func main() {
 	var (
 		cluster = flag.String("cluster", ":9201,:9202,:9203", "comma separated cluster servers")
@@ -153,7 +157,12 @@ func addServer(c *client, serverID uint64) {
 }
 
 func removeServer(c *client, serverID uint64) {
+START:
 	res, err := c.removeServer(serverID)
+
+	if err != nil && *ensure {
+		goto START
+	}
 
 	logger := logrus.WithError(err)
 
