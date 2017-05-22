@@ -1,5 +1,5 @@
 hash: 5cb8217193128bfa52c03a53273af89bd9d54e0a91bd05a4c2f8fe58855464c8
-updated: 2017-05-22T12:01:27.226704216+02:00
+updated: 2017-05-22T12:10:06.777616602+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 93f237eba9b0602f3e73710416558854a81d9337
@@ -75,7 +75,7 @@ imports:
   subpackages:
   - simplelru
 - name: github.com/hashicorp/raft
-  version: 3fd74775e321caa0ba7bbf72191877fcb7f6215a
+  version: bfbca63c643ac2f2670964b24d94405400600939
   repo: https://github.com/s111/hashicorpraft.git
   vcs: git
 - name: github.com/hashicorp/raft-boltdb

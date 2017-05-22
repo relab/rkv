@@ -927,6 +927,7 @@ func (r *Raft) processLog(l *Log, future *logFuture) {
 		return
 
 	case LogConfiguration:
+		r.event.Record(gorumsraft.EventAdded)
 	case LogAddPeerDeprecated:
 	case LogRemovePeerDeprecated:
 	case LogNoop:
