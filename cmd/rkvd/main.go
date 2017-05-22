@@ -268,7 +268,7 @@ func runhashicorp(
 		TrailingLogs:       math.MaxUint64,
 		SnapshotInterval:   120 * time.Hour,
 		SnapshotThreshold:  math.MaxUint64,
-		LeaderLeaseTimeout: *electionTimeout / 2,
+		LeaderLeaseTimeout: *electionTimeout,
 	}
 
 	leaderOut := make(chan struct{})
