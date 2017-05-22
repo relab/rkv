@@ -1019,6 +1019,7 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 
 	// Save the current leader
 	r.setLeader(ServerAddress(r.trans.DecodePeer(a.Leader)))
+	r.setLastContact()
 
 	// Verify the last log entry
 	if a.PrevLogEntry > 0 {
