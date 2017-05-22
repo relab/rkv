@@ -11,19 +11,21 @@ import (
 
 // Service exposes a key-value store as a gRPC service.
 type Service struct {
-	raft   raft.Raft
-	sem    chan struct{} // Forces requests to be handled in order. len(sema) = concurrent requests.
-	leader chan struct{}
-	logger logrus.FieldLogger
+	raft    raft.Raft
+	sem     chan struct{} // Forces requests to be handled in order. len(sema) = concurrent requests.
+	leader  chan struct{}
+	replace chan struct{}
+	logger  logrus.FieldLogger
 }
 
 // NewService initializes and returns a new Service.
 func NewService(logger logrus.FieldLogger, raft raft.Raft, leader chan struct{}) *Service {
 	return &Service{
-		raft:   raft,
-		sem:    make(chan struct{}, 50000),
-		leader: leader,
-		logger: logger,
+		raft:    raft,
+		sem:     make(chan struct{}, 50000),
+		leader:  leader,
+		replace: make(chan struct{}, 1),
+		logger:  logger,
 	}
 }
 
@@ -177,6 +179,17 @@ func (s *Service) ReconfOnBecome(ctx context.Context, req *commonpb.ReconfReques
 		if err, ok := res.Value.(error); ok {
 			return nil, err
 		}
+		go func() {
+			select {
+			case s.replace <- struct{}{}:
+			default:
+				return
+			}
+			req.ReconfType = commonpb.ReconfRemove
+			req.ServerID = req.ServerID%2 + 1
+			s.Reconf(context.Background(), req)
+			<-s.replace
+		}()
 		return res.Value.(*commonpb.ReconfResponse), nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
