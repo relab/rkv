@@ -186,7 +186,7 @@ func (s *Service) ReconfOnBecome(ctx context.Context, req *commonpb.ReconfReques
 				return
 			}
 			req.ReconfType = commonpb.ReconfRemove
-			req.ServerID = req.ServerID%2 + 1
+			req.ServerID = 1
 			s.Reconf(context.Background(), req)
 			<-s.replace
 		}()
