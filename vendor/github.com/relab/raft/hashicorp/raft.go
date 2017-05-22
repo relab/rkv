@@ -203,6 +203,7 @@ func (w *Wrapper) Apply(logentry *hraft.Log) interface{} {
 			w.event.Record(raft.EventRemoved)
 		}
 		w.conf = configuration
+		return nil
 	}
 
 	panic(fmt.Sprintf("no case for logtype: %v", logentry.Type))
