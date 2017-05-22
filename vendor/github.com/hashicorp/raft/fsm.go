@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/armon/go-metrics"
+	gorumsraft "github.com/relab/raft"
 )
 
 // FSM provides an interface that can be implemented by
@@ -56,6 +57,10 @@ func (r *Raft) runFSM() {
 			start := time.Now()
 			resp = r.fsm.Apply(req.log)
 			metrics.MeasureSince([]string{"raft", "fsm", "apply"}, start)
+		}
+
+		if req.log.Type == LogConfiguration {
+			r.event.Record(gorumsraft.EventAdded)
 		}
 
 		// Update the indexes
