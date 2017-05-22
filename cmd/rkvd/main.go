@@ -253,6 +253,7 @@ func runhashicorp(
 	if err != nil {
 		logger.Fatal(err)
 	}
+	cachedlogs, err := hashic.NewLogCache(*cache, logs)
 
 	snaps := hashic.NewInmemSnapshotStore()
 
@@ -272,7 +273,11 @@ func runhashicorp(
 
 	leaderOut := make(chan struct{})
 
-	node := hraft.NewRaft(logger, NewStore(), cfg, servers, trans, logs, logs, snaps, ids, lat, event, leaderOut, id, *checkQuorum)
+	node := hraft.NewRaft(
+		logger, NewStore(), cfg, servers,
+		trans, cachedlogs, hashic.NewInmemStore(), snaps,
+		ids, lat, event, leaderOut, id, *checkQuorum,
+	)
 
 	service := NewService(logger, node, leaderOut)
 	rkvpb.RegisterRKVServer(grpcServer, service)
