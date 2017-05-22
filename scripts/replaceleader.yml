@@ -4,24 +4,28 @@
   gather_facts: false
   ignore_errors: yes
   vars:
-    backend: gorums
     servers: "{{groups['raft-servers'][:4]|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
     cluster: "1,2,3"
 
   tasks:
     - name: Remove old server data
       shell: /bin/sh -c 'rm -rf /media/ephemeral0/tmp/*'
+      when: raftID != 5
 
-    - name: Start servers
-      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -heartbeat 2ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+    - name: Start leader
+      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -heartbeat 2ms -election 200ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      when: raftID != 5
 
     - name: Sleep
       shell: sleep 2s
+      when: raftID != 5
 
-    - name: Kill leader after 35s and send a request to replace it with server 4
-      shell: sleep 35; if [[ $(getleaderid -cluster "{{servers}}") -eq "{{raftID}}" ]]; then killall -INT rkvd; GOGC=off rkvctl -cluster "{{servers}}" -add 4; fi
-      async: 40
+    - name: Get leader
+      shell: sleep 15; getleaderid -cluster "{{servers}}"
+      async: 120
       poll: 0
+      register: get_leader
+      when: raftID != 5
 
 - name: Client
   hosts: raft-clients
@@ -30,9 +34,6 @@
   ignore_errors: yes
   vars:
     servers: "{{groups['raft-servers'][:4]|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
-    throughput: 50
-    clients: 150
-    time: 60s
     payload: 16
 
   tasks:
@@ -40,14 +41,64 @@
       shell: /bin/sh -c 'rm -rf /media/ephemeral0/tmp/*'
 
     - name: Throughput
-      shell: cd /media/ephemeral0/tmp/; GOGC=off rkvctl -cluster "{{servers}}" -throughput "{{throughput|int}}" -clients "{{clients}}" -time "{{time}}" -payload "{{payload}}"
+      shell: cd /media/ephemeral0/tmp/; GOGC=off rkvctl -cluster "{{servers}}" -throughput "{{throughput|int}}" -clients "{{clients}}" -time "{{time}}" -payload "{{payload}}" </dev/null >/dev/null 2>&1
       async: 120
-      poll: 5
+      poll: 0
+      register: rkvctl_task
+
+- name: Wait and then kill the leader
+  hosts: raft-servers
+  remote_user: ec2-user
+  gather_facts: false
+  ignore_errors: yes
+  vars:
+    servers: "{{groups['raft-servers'][:4]}}"
+
+  tasks:
+    - name: Wait on get leader
+      async_status: jid="{{get_leader.ansible_job_id}}"
+      register: leader_id
+      until: leader_id.finished
+      retries: 999
+      when: raftID != 5
+
+    - name: Set remaining
+      set_fact:
+        remaining: "{{servers[:leader_id.stdout|int-1] + servers[leader_id.stdout|int:]}}"
+      when: raftID != 5
+
+    - name: Debugging
+      set_fact:
+        newservers: "{{remaining|map('regex_replace', '^(.*)$', '\\1:9201' )|join(',')}}"
+      when: raftID != 5
+
+    - name: Add new server
+      shell: GOGC=off rkvctl -cluster "{{newservers}}" -ensure -remove "{{leader_id.stdout|int}}"
+      async: 20
+      poll: 0
+      when: raftID != 5 and raftID == leader_id.stdout|int
+
+    - name: Kill leader
+      shell: sleep 5; killall -INT rkvd
+      when: raftID != 5 and raftID == leader_id.stdout|int
+
+- name: Cleanup client
+  hosts: raft-clients
+  remote_user: ec2-user
+  gather_facts: false
+  ignore_errors: yes
+
+  tasks:
+    - name: Wait on client
+      async_status: jid="{{rkvctl_task.ansible_job_id}}"
+      register: rkvctl_result
+      until: rkvctl_result.finished
+      retries: 999
 
     - name: Move data
       shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_0_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
 
-- name: Cleanup
+- name: Cleanup servers
   hosts: raft-servers
   remote_user: ec2-user
   gather_facts: false
