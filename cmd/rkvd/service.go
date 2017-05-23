@@ -136,9 +136,7 @@ func (s *Service) Lookup(ctx context.Context, req *rkvpb.LookupRequest) (*rkvpb.
 
 // Reconf implements RKVServer.
 func (s *Service) Reconf(ctx context.Context, req *commonpb.ReconfRequest) (*commonpb.ReconfResponse, error) {
-	s.sem <- struct{}{}
 	future, err := s.raft.ProposeConf(ctx, req)
-	<-s.sem
 
 	if err != nil {
 		return nil, err
@@ -157,7 +155,6 @@ func (s *Service) Reconf(ctx context.Context, req *commonpb.ReconfRequest) (*com
 
 // ReconfOnBecome implements RKVServer.
 func (s *Service) ReconfOnBecome(ctx context.Context, req *commonpb.ReconfRequest) (*commonpb.ReconfResponse, error) {
-	s.sem <- struct{}{}
 	s.logger.Warnln("Waiting on becoming leader")
 	select {
 	case <-s.leader:
@@ -166,7 +163,6 @@ func (s *Service) ReconfOnBecome(ctx context.Context, req *commonpb.ReconfReques
 		return nil, ctx.Err()
 	}
 	future, err := s.raft.ProposeConf(ctx, req)
-	<-s.sem
 
 	if err != nil {
 		return nil, err
