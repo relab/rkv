@@ -116,6 +116,7 @@ func newTestServer(t *testing.T, wg *sync.WaitGroup, c *cfg, port uint64, exclud
 		Storage:          server.mem,
 		HeartbeatTimeout: heartbeat,
 		ElectionTimeout:  c.electionTimeout,
+		CheckQuorum:      true,
 		Logger: &logrus.Logger{
 			Out: ioutil.Discard,
 		},
@@ -135,7 +136,7 @@ func newTestServer(t *testing.T, wg *sync.WaitGroup, c *cfg, port uint64, exclud
 	}()
 
 	sm := &noopMachine{}
-	r := raftgorums.NewRaft(sm, cfg, raft.NewLatency(), raft.NewEvent())
+	r := raftgorums.NewRaft(sm, cfg, raft.NewLatency(), raft.NewEvent(), make(chan struct{}))
 
 	server.grpcServer = grpcServer
 	server.raft = r

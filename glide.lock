@@ -1,5 +1,5 @@
 hash: 5cb8217193128bfa52c03a53273af89bd9d54e0a91bd05a4c2f8fe58855464c8
-updated: 2017-05-22T12:10:06.777616602+02:00
+updated: 2017-05-23T11:41:36.175903947+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 93f237eba9b0602f3e73710416558854a81d9337
@@ -61,7 +61,7 @@ imports:
   - proto
   - protoc-gen-gogo/descriptor
 - name: github.com/golang/protobuf
-  version: fec3b39b059c0f88fa6b20f5ed012b1aa203a8b4
+  version: 7a211bcf3bce0e3f1d74f9894916e6f116ae83b4
   subpackages:
   - proto
 - name: github.com/hashicorp/go-immutable-radix
@@ -112,7 +112,7 @@ imports:
   repo: https://github.com/s111/gorums.git
   vcs: git
 - name: github.com/relab/raft
-  version: aa6cbf67d2553ba8239576f95e2eb18f0072b8b3
+  version: d7c3b9f63ff56099affe763a5d9ddfdc601a7bd9
   subpackages:
   - commonpb
   - etcd
