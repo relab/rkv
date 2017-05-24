@@ -151,10 +151,10 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	var discarded, reset bool
 	defer func() {
 		if len(req.Entries) > 0 {
-			r.cr.Record(req.PrevLogIndex+1, req.PrevLogIndex+uint64(len(req.Entries)), len(req.Entries), discarded, reset)
+			r.cr.Record(req.PrevLogIndex+1, req.PrevLogIndex+uint64(len(req.Entries)), len(req.Entries), discarded, reset, r.catchupIndex, r.catchupDiff, r.catchingup)
 			return
 		}
-		r.cr.Record(req.PrevLogIndex, req.PrevLogIndex, 0, discarded, reset)
+		r.cr.Record(req.PrevLogIndex, req.PrevLogIndex, 0, discarded, reset, r.catchupIndex, r.catchupDiff, r.catchingup)
 	}()
 
 	// #AE1 Reply false if term < currentTerm.
@@ -217,7 +217,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	if !success {
 		r.catchingup = time.Now()
 		r.catchupIndex = res.MatchIndex
-		r.catchupDiff = int((req.PrevLogIndex + uint64(len(req.Entries))) - res.MatchIndex)
+		r.catchupDiff = int(min(0, (req.PrevLogIndex+uint64(len(req.Entries)))-res.MatchIndex))
 		r.cureqout <- &catchUpReq{
 			leaderID: req.LeaderID,
 			// TODO term: req.Term, ?
