@@ -62,6 +62,3 @@
 
     - name: Move event data
       shell: /bin/sh -c 'mv /media/ephemeral0/tmp/event*.csv /media/ephemeral0/save/event_{{raftID}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
-
-    - name: Move catchup data
-      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/catchup*.csv /media/ephemeral0/save/catchup_{{raftID}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
