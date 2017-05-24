@@ -164,13 +164,11 @@ func main() {
 
 	lat := raft.NewLatency()
 	event := raft.NewEvent()
-	cr := raft.NewCatchupRecorder()
 
 	var once sync.Once
 	writeData := func() {
 		lat.Write(fmt.Sprintf("./latency-%v.csv", time.Now().UnixNano()))
 		event.Write(fmt.Sprintf("./event-%v.csv", time.Now().UnixNano()))
-		cr.Write(fmt.Sprintf("./catchup-%v.csv", time.Now().UnixNano()))
 	}
 
 	c := make(chan os.Signal, 1)
@@ -187,7 +185,7 @@ func main() {
 
 	switch *backend {
 	case bgorums:
-		rungorums(logger, lis, grpcServer, *id, ids, nodes, lat, event, cr)
+		rungorums(logger, lis, grpcServer, *id, ids, nodes, lat, event)
 	case betcd:
 		runetcd(logger, lis, grpcServer, *id, ids, nodes, lat, event)
 	case bhashicorp:
@@ -405,7 +403,7 @@ func rungorums(
 	logger logrus.FieldLogger,
 	lis net.Listener, grpcServer *grpc.Server,
 	id uint64, ids []uint64, nodes []string,
-	lat *raft.Latency, event *raft.Event, cr *raft.CatchupRecorder,
+	lat *raft.Latency, event *raft.Event,
 ) {
 	storage, err := raft.NewFileStorage(fmt.Sprintf("db%.2d.bolt", id), !*recover)
 
@@ -430,7 +428,7 @@ func rungorums(
 		Logger:            logger,
 		CheckQuorum:       *checkQuorum,
 		MetricsEnabled:    true,
-	}, lat, event, cr, leaderOut)
+	}, lat, event, leaderOut)
 
 	service := NewService(logger, node, leaderOut)
 	rkvpb.RegisterRKVServer(grpcServer, service)
