@@ -122,7 +122,10 @@ type readCorrectableReply struct {
 func (c *Configuration) readCorrectable(ctx context.Context, a *ReadRequest, resp *ReadCorrectableReply) {
 	replyChan := make(chan readCorrectableReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadCorrectable(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCReadCorrectable(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (

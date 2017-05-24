@@ -96,10 +96,15 @@ func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, a *{{.FQR
 {{define "callLoop"}}
 	replyChan := make(chan {{.UnexportedTypeName}}, c.n)
 	for _, n := range c.nodes {
+    node := n // Bind node to current n as n has changed when the function is actually executed.
 {{- if .PerNodeArg}}
-		go callGRPC{{.MethodName}}(ctx, n, f(*a, n.id), replyChan, c.errs)
+    n.rpcs <- func() {
+		       callGRPC{{.MethodName}}(ctx, node, f(*a, node.id), replyChan, c.errs)
+    }
 {{else}}
-		go callGRPC{{.MethodName}}(ctx, n, a, replyChan, c.errs)
+    n.rpcs <- func() {
+		       callGRPC{{.MethodName}}(ctx, node, a, replyChan, c.errs)
+    }
 {{end -}}
 	}
 {{end}}
@@ -791,6 +796,7 @@ type Node struct {
 	self bool
 	addr string
 	conn *grpc.ClientConn
+  rpcs chan func()
 
 
 {{range .Clients}}
@@ -844,6 +850,7 @@ func (n *Node) close() error {
 	if err := n.conn.Close(); err != nil {
                 return fmt.Errorf("conn close error: %v", err)
         }	
+  close(n.rpcs)
 	return nil
 }
 `

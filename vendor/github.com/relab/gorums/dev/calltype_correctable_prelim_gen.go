@@ -120,7 +120,10 @@ type readPrelimReply struct {
 func (c *Configuration) readPrelim(ctx context.Context, a *ReadRequest, resp *ReadPrelimReply) {
 	replyChan := make(chan readPrelimReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadPrelim(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCReadPrelim(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (

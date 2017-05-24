@@ -16,6 +16,12 @@ func (n *Node) Address() string {
 	return n.addr
 }
 
+func (n *Node) orderRPCs() {
+	for f := range n.rpcs {
+		f()
+	}
+}
+
 func (n *Node) String() string {
 	n.mu.Lock()
 	defer n.mu.Unlock()

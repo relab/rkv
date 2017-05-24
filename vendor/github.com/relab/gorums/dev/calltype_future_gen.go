@@ -91,7 +91,10 @@ func (c *Configuration) readFuture(ctx context.Context, a *ReadRequest, resp *Re
 
 	replyChan := make(chan readFutureReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadFuture(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCReadFuture(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (
@@ -233,7 +236,10 @@ func (c *Configuration) writeFuture(ctx context.Context, a *State, resp *WriteFu
 
 	replyChan := make(chan writeFutureReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCWriteFuture(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCWriteFuture(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (

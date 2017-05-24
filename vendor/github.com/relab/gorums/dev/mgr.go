@@ -95,7 +95,10 @@ func (m *Manager) createNode(addr string) (*Node, error) {
 		id:      id,
 		addr:    tcpAddr.String(),
 		latency: -1 * time.Second,
+		rpcs:    make(chan func(), 4096),
 	}
+
+	go node.orderRPCs()
 
 	return node, nil
 }

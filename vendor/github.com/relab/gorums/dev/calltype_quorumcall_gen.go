@@ -55,7 +55,10 @@ func (c *Configuration) read(ctx context.Context, a *ReadRequest) (resp *State, 
 
 	replyChan := make(chan readReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCRead(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCRead(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (
@@ -156,7 +159,10 @@ func (c *Configuration) readCustomReturn(ctx context.Context, a *ReadRequest) (r
 
 	replyChan := make(chan readCustomReturnReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadCustomReturn(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCReadCustomReturn(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (
@@ -257,7 +263,10 @@ func (c *Configuration) write(ctx context.Context, a *State) (resp *WriteRespons
 
 	replyChan := make(chan writeReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCWrite(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCWrite(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (
@@ -360,7 +369,10 @@ func (c *Configuration) writePerNode(ctx context.Context, a *State, f func(arg S
 
 	replyChan := make(chan writePerNodeReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCWritePerNode(ctx, n, f(*a, n.id), replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCWritePerNode(ctx, node, f(*a, node.id), replyChan, c.errs)
+		}
 	}
 
 	var (

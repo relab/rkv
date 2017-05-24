@@ -537,7 +537,10 @@ type readPrelimReply struct {
 func (c *Configuration) readPrelim(ctx context.Context, a *ReadRequest, resp *ReadPrelimReply) {
 	replyChan := make(chan readPrelimReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadPrelim(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCReadPrelim(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (
@@ -710,7 +713,10 @@ type readCorrectableReply struct {
 func (c *Configuration) readCorrectable(ctx context.Context, a *ReadRequest, resp *ReadCorrectableReply) {
 	replyChan := make(chan readCorrectableReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadCorrectable(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCReadCorrectable(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (
@@ -858,7 +864,10 @@ func (c *Configuration) readFuture(ctx context.Context, a *ReadRequest, resp *Re
 
 	replyChan := make(chan readFutureReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadFuture(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCReadFuture(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (
@@ -1000,7 +1009,10 @@ func (c *Configuration) writeFuture(ctx context.Context, a *State, resp *WriteFu
 
 	replyChan := make(chan writeFutureReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCWriteFuture(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCWriteFuture(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (
@@ -1136,7 +1148,10 @@ func (c *Configuration) read(ctx context.Context, a *ReadRequest) (resp *State, 
 
 	replyChan := make(chan readReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCRead(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCRead(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (
@@ -1237,7 +1252,10 @@ func (c *Configuration) readCustomReturn(ctx context.Context, a *ReadRequest) (r
 
 	replyChan := make(chan readCustomReturnReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCReadCustomReturn(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCReadCustomReturn(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (
@@ -1338,7 +1356,10 @@ func (c *Configuration) write(ctx context.Context, a *State) (resp *WriteRespons
 
 	replyChan := make(chan writeReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCWrite(ctx, n, a, replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCWrite(ctx, node, a, replyChan, c.errs)
+		}
 	}
 
 	var (
@@ -1441,7 +1462,10 @@ func (c *Configuration) writePerNode(ctx context.Context, a *State, f func(arg S
 
 	replyChan := make(chan writePerNodeReply, c.n)
 	for _, n := range c.nodes {
-		go callGRPCWritePerNode(ctx, n, f(*a, n.id), replyChan, c.errs)
+		node := n // Bind node to current n as n has changed when the function is actually executed.
+		n.rpcs <- func() {
+			callGRPCWritePerNode(ctx, node, f(*a, node.id), replyChan, c.errs)
+		}
 	}
 
 	var (
@@ -1510,6 +1534,7 @@ type Node struct {
 	self bool
 	addr string
 	conn *grpc.ClientConn
+	rpcs chan func()
 
 	RegisterClient RegisterClient
 
@@ -1546,6 +1571,7 @@ func (n *Node) close() error {
 	if err := n.conn.Close(); err != nil {
 		return fmt.Errorf("conn close error: %v", err)
 	}
+	close(n.rpcs)
 	return nil
 }
 
@@ -1798,7 +1824,10 @@ func (m *Manager) createNode(addr string) (*Node, error) {
 		id:      id,
 		addr:    tcpAddr.String(),
 		latency: -1 * time.Second,
+		rpcs:    make(chan func(), 4096),
 	}
+
+	go node.orderRPCs()
 
 	return node, nil
 }
@@ -1981,6 +2010,12 @@ func (n *Node) ID() uint32 {
 // Address returns network address of m.
 func (n *Node) Address() string {
 	return n.addr
+}
+
+func (n *Node) orderRPCs() {
+	for f := range n.rpcs {
+		f()
+	}
 }
 
 func (n *Node) String() string {
