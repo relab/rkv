@@ -2,7 +2,6 @@ package raftgorums
 
 import (
 	"container/list"
-	"time"
 
 	"golang.org/x/net/context"
 
@@ -148,15 +147,6 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 		MatchIndex: logLen,
 	}
 
-	var discarded, reset bool
-	defer func() {
-		if len(req.Entries) > 0 {
-			r.cr.Record(req.PrevLogIndex+1, req.PrevLogIndex+uint64(len(req.Entries)), len(req.Entries), discarded, reset, r.catchupIndex, r.catchupDiff, r.catchingup)
-			return
-		}
-		r.cr.Record(req.PrevLogIndex, req.PrevLogIndex, 0, discarded, reset, r.catchupIndex, r.catchupDiff, r.catchingup)
-	}()
-
 	// #AE1 Reply false if term < currentTerm.
 	if req.Term < r.currentTerm {
 		return res
@@ -193,8 +183,6 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 		rmetrics.leader.Set(float64(req.LeaderID))
 	}
 
-	oldLeader := r.leader
-
 	// We acknowledge this server as the leader as it's has the highest term
 	// we have seen, and there can only be one leader per term.
 	r.leader = req.LeaderID
@@ -203,24 +191,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	// TODO Revisit heartbeat mechanism.
 	r.resetElection = true
 
-	// Skip if there was a leader change.
-	if req.LeaderID == oldLeader &&
-		// Skip if this is the catchup we have been waiting for.
-		!(req.PrevLogIndex == r.catchupIndex && uint64(len(req.Entries)) >= r.catchupDiff) &&
-		// Wait on catchup for up to a minute.
-		time.Since(r.catchingup) < time.Minute {
-		discarded = true
-		return res
-	}
-
-	reset = true
-	// January 1, 1970 UTC.
-	r.catchingup = time.Time{}
-
 	if !success {
-		r.catchingup = time.Now()
-		r.catchupIndex = res.MatchIndex
-		r.catchupDiff = max(0, (req.PrevLogIndex+uint64(len(req.Entries)))-res.MatchIndex)
 		r.cureqout <- &catchUpReq{
 			leaderID: req.LeaderID,
 			// TODO term: req.Term, ?
