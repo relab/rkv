@@ -57,6 +57,8 @@ func (n *Node) close() error {
 	if err := n.conn.Close(); err != nil {
 		return fmt.Errorf("conn close error: %v", err)
 	}
-	close(n.rpcs)
+	if n.rpcs != nil {
+		close(n.rpcs)
+	}
 	return nil
 }

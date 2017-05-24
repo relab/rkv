@@ -538,8 +538,12 @@ func (c *Configuration) readPrelim(ctx context.Context, a *ReadRequest, resp *Re
 	replyChan := make(chan readPrelimReply, c.n)
 	for _, n := range c.nodes {
 		node := n // Bind node to current n as n has changed when the function is actually executed.
-		n.rpcs <- func() {
+		select {
+		case n.rpcs <- func() {
 			callGRPCReadPrelim(ctx, node, a, replyChan, c.errs)
+		}:
+		default:
+			go callGRPCReadPrelim(ctx, node, a, replyChan, c.errs)
 		}
 	}
 
@@ -714,8 +718,12 @@ func (c *Configuration) readCorrectable(ctx context.Context, a *ReadRequest, res
 	replyChan := make(chan readCorrectableReply, c.n)
 	for _, n := range c.nodes {
 		node := n // Bind node to current n as n has changed when the function is actually executed.
-		n.rpcs <- func() {
+		select {
+		case n.rpcs <- func() {
 			callGRPCReadCorrectable(ctx, node, a, replyChan, c.errs)
+		}:
+		default:
+			go callGRPCReadCorrectable(ctx, node, a, replyChan, c.errs)
 		}
 	}
 
@@ -865,8 +873,12 @@ func (c *Configuration) readFuture(ctx context.Context, a *ReadRequest, resp *Re
 	replyChan := make(chan readFutureReply, c.n)
 	for _, n := range c.nodes {
 		node := n // Bind node to current n as n has changed when the function is actually executed.
-		n.rpcs <- func() {
+		select {
+		case n.rpcs <- func() {
 			callGRPCReadFuture(ctx, node, a, replyChan, c.errs)
+		}:
+		default:
+			go callGRPCReadFuture(ctx, node, a, replyChan, c.errs)
 		}
 	}
 
@@ -1010,8 +1022,12 @@ func (c *Configuration) writeFuture(ctx context.Context, a *State, resp *WriteFu
 	replyChan := make(chan writeFutureReply, c.n)
 	for _, n := range c.nodes {
 		node := n // Bind node to current n as n has changed when the function is actually executed.
-		n.rpcs <- func() {
+		select {
+		case n.rpcs <- func() {
 			callGRPCWriteFuture(ctx, node, a, replyChan, c.errs)
+		}:
+		default:
+			go callGRPCWriteFuture(ctx, node, a, replyChan, c.errs)
 		}
 	}
 
@@ -1149,8 +1165,12 @@ func (c *Configuration) read(ctx context.Context, a *ReadRequest) (resp *State, 
 	replyChan := make(chan readReply, c.n)
 	for _, n := range c.nodes {
 		node := n // Bind node to current n as n has changed when the function is actually executed.
-		n.rpcs <- func() {
+		select {
+		case n.rpcs <- func() {
 			callGRPCRead(ctx, node, a, replyChan, c.errs)
+		}:
+		default:
+			go callGRPCRead(ctx, node, a, replyChan, c.errs)
 		}
 	}
 
@@ -1253,8 +1273,12 @@ func (c *Configuration) readCustomReturn(ctx context.Context, a *ReadRequest) (r
 	replyChan := make(chan readCustomReturnReply, c.n)
 	for _, n := range c.nodes {
 		node := n // Bind node to current n as n has changed when the function is actually executed.
-		n.rpcs <- func() {
+		select {
+		case n.rpcs <- func() {
 			callGRPCReadCustomReturn(ctx, node, a, replyChan, c.errs)
+		}:
+		default:
+			go callGRPCReadCustomReturn(ctx, node, a, replyChan, c.errs)
 		}
 	}
 
@@ -1357,8 +1381,12 @@ func (c *Configuration) write(ctx context.Context, a *State) (resp *WriteRespons
 	replyChan := make(chan writeReply, c.n)
 	for _, n := range c.nodes {
 		node := n // Bind node to current n as n has changed when the function is actually executed.
-		n.rpcs <- func() {
+		select {
+		case n.rpcs <- func() {
 			callGRPCWrite(ctx, node, a, replyChan, c.errs)
+		}:
+		default:
+			go callGRPCWrite(ctx, node, a, replyChan, c.errs)
 		}
 	}
 
@@ -1463,8 +1491,12 @@ func (c *Configuration) writePerNode(ctx context.Context, a *State, f func(arg S
 	replyChan := make(chan writePerNodeReply, c.n)
 	for _, n := range c.nodes {
 		node := n // Bind node to current n as n has changed when the function is actually executed.
-		n.rpcs <- func() {
+		select {
+		case n.rpcs <- func() {
 			callGRPCWritePerNode(ctx, node, f(*a, node.id), replyChan, c.errs)
+		}:
+		default:
+			go callGRPCWritePerNode(ctx, node, f(*a, node.id), replyChan, c.errs)
 		}
 	}
 
@@ -1571,7 +1603,9 @@ func (n *Node) close() error {
 	if err := n.conn.Close(); err != nil {
 		return fmt.Errorf("conn close error: %v", err)
 	}
-	close(n.rpcs)
+	if n.rpcs != nil {
+		close(n.rpcs)
+	}
 	return nil
 }
 
@@ -1824,10 +1858,12 @@ func (m *Manager) createNode(addr string) (*Node, error) {
 		id:      id,
 		addr:    tcpAddr.String(),
 		latency: -1 * time.Second,
-		rpcs:    make(chan func(), 4096),
 	}
 
-	go node.orderRPCs()
+	if m.opts.order {
+		node.rpcs = make(chan func(), 4096)
+		go node.orderRPCs()
+	}
 
 	return node, nil
 }
@@ -2145,6 +2181,7 @@ type managerOptions struct {
 	logger       *log.Logger
 	noConnect    bool
 	trace        bool
+	order        bool
 }
 
 // ManagerOption provides a way to set different options on a new Manager.
@@ -2181,6 +2218,14 @@ func WithNoConnect() ManagerOption {
 func WithTracing() ManagerOption {
 	return func(o *managerOptions) {
 		o.trace = true
+	}
+}
+
+// WithNodeOrdering controls whether Gorums should force RPCs to be sent (per
+// node) in the order their parent quorum call were invoked.
+func WithNodeOrdering() ManagerOption {
+	return func(o *managerOptions) {
+		o.order = true
 	}
 }
 

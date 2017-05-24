@@ -123,8 +123,12 @@ func (c *Configuration) readCorrectable(ctx context.Context, a *ReadRequest, res
 	replyChan := make(chan readCorrectableReply, c.n)
 	for _, n := range c.nodes {
 		node := n // Bind node to current n as n has changed when the function is actually executed.
-		n.rpcs <- func() {
+		select {
+		case n.rpcs <- func() {
 			callGRPCReadCorrectable(ctx, node, a, replyChan, c.errs)
+		}:
+		default:
+			go callGRPCReadCorrectable(ctx, node, a, replyChan, c.errs)
 		}
 	}
 

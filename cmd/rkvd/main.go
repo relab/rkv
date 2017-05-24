@@ -30,6 +30,7 @@ import (
 	etcd "github.com/relab/raft/etcd"
 	hraft "github.com/relab/raft/hashicorp"
 	"github.com/relab/raft/raftgorums"
+	gorums "github.com/relab/raft/raftgorums/gorumspb"
 	"github.com/relab/rkv/rkvpb"
 
 	"google.golang.org/grpc"
@@ -54,6 +55,7 @@ var (
 	cache             = flag.Int("cache", 1024*1024*64, "How many entries should be kept in memory") // ~1GB @ 16bytes per entry.
 	maxgrpc           = flag.Int("maxgrpc", 128<<20, "Max GRPC message size")                        // ~128MB.
 	checkQuorum       = flag.Bool("checkquorum", false, "Require a quorum of responses to a heartbeat to retain leadership")
+	order             = flag.Bool("ordergorums", true, "Force ordering of per node RPCs with Gorums")
 )
 
 func main() {
@@ -437,7 +439,18 @@ func rungorums(
 		logger.Fatal(grpcServer.Serve(lis))
 	}()
 
-	logger.Fatal(node.Run(grpcServer))
+	opts := []gorums.ManagerOption{
+		gorums.WithGrpcDialOptions(
+			grpc.WithBlock(),
+			grpc.WithInsecure(),
+			grpc.WithTimeout(raftgorums.TCPConnect*time.Millisecond)),
+	}
+
+	if *order {
+		opts = append(opts, gorums.WithNodeOrdering())
+	}
+
+	logger.Fatal(node.Run(grpcServer, opts...))
 }
 
 func contains(x uint64, xs []uint64) bool {

@@ -121,8 +121,12 @@ func (c *Configuration) readPrelim(ctx context.Context, a *ReadRequest, resp *Re
 	replyChan := make(chan readPrelimReply, c.n)
 	for _, n := range c.nodes {
 		node := n // Bind node to current n as n has changed when the function is actually executed.
-		n.rpcs <- func() {
+		select {
+		case n.rpcs <- func() {
 			callGRPCReadPrelim(ctx, node, a, replyChan, c.errs)
+		}:
+		default:
+			go callGRPCReadPrelim(ctx, node, a, replyChan, c.errs)
 		}
 	}
 

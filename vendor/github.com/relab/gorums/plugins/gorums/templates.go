@@ -98,12 +98,20 @@ func (c *Configuration) {{.UnexportedMethodName}}(ctx context.Context, a *{{.FQR
 	for _, n := range c.nodes {
     node := n // Bind node to current n as n has changed when the function is actually executed.
 {{- if .PerNodeArg}}
-    n.rpcs <- func() {
+    select {
+    case n.rpcs <- func() {
 		       callGRPC{{.MethodName}}(ctx, node, f(*a, node.id), replyChan, c.errs)
+    }:
+    default:
+		       go callGRPC{{.MethodName}}(ctx, node, f(*a, node.id), replyChan, c.errs)
     }
 {{else}}
-    n.rpcs <- func() {
+    select {
+    case n.rpcs <- func() {
 		       callGRPC{{.MethodName}}(ctx, node, a, replyChan, c.errs)
+    }:
+    default:
+		       go callGRPC{{.MethodName}}(ctx, node, a, replyChan, c.errs)
     }
 {{end -}}
 	}
@@ -850,7 +858,9 @@ func (n *Node) close() error {
 	if err := n.conn.Close(); err != nil {
                 return fmt.Errorf("conn close error: %v", err)
         }	
-  close(n.rpcs)
+  if n.rpcs != nil {
+     close(n.rpcs)
+  }
 	return nil
 }
 `
