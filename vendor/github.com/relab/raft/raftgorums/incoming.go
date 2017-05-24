@@ -148,18 +148,14 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 		MatchIndex: logLen,
 	}
 
-	var discarded bool
-	defer r.cr.Record(req.PrevLogIndex+1, req.PrevLogIndex+uint64(len(req.Entries)), len(req.Entries), discarded)
-
-	// Wait on catchup for up to a minute. Skip test if there was a leader
-	// change.
-	if req.LeaderID == r.leader && !req.Catchup && time.Since(r.catchingup) < time.Minute {
-		discarded = true
-		return res
-	}
-
-	// January 1, 1970 UTC.
-	r.catchingup = time.Time{}
+	var discarded, reset bool
+	defer func() {
+		if len(req.Entries) > 0 {
+			r.cr.Record(req.PrevLogIndex+1, req.PrevLogIndex+uint64(len(req.Entries)), len(req.Entries), discarded, reset)
+			return
+		}
+		r.cr.Record(req.PrevLogIndex, req.PrevLogIndex, 0, discarded, reset)
+	}()
 
 	// #AE1 Reply false if term < currentTerm.
 	if req.Term < r.currentTerm {
@@ -196,6 +192,17 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	if r.metricsEnabled {
 		rmetrics.leader.Set(float64(req.LeaderID))
 	}
+
+	// Wait on catchup for up to a minute. Skip test if there was a leader
+	// change.
+	if req.LeaderID == r.leader && !req.Catchup && time.Since(r.catchingup) < time.Minute {
+		discarded = true
+		return res
+	}
+
+	// January 1, 1970 UTC.
+	reset = true
+	r.catchingup = time.Time{}
 
 	// We acknowledge this server as the leader as it's has the highest term
 	// we have seen, and there can only be one leader per term.
