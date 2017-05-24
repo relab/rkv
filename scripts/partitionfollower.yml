@@ -13,11 +13,11 @@
       shell: /bin/sh -c 'rm -rf /media/ephemeral0/tmp/*'
 
     - name: Start first
-      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -heartbeat 2ms -election 100ms -checkquorum -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -ordergorums="{{order}}" -heartbeat 2ms -election 100ms -checkquorum -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
       when: raftID != groups['raft-servers']|length
 
     - name: Start last server
-      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -heartbeat 2ms -checkquorum -election 2s -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -ordergorums="{{order}}" -heartbeat 2ms -checkquorum -election 2s -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
       when: raftID == groups['raft-servers']|length
 
     - name: Sleep
@@ -52,7 +52,7 @@
       poll: 5
 
     - name: Move data
-      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_0_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_0_{{order}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
 
 - name: Cleanup
   hosts: raft-servers
@@ -65,7 +65,7 @@
       shell: killall -s INT rkvd
 
     - name: Move latency data
-      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_{{raftID}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_{{raftID}}_{{order}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
 
     - name: Move event data
-      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/event*.csv /media/ephemeral0/save/event_{{raftID}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/event*.csv /media/ephemeral0/save/event_{{raftID}}_{{order}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
