@@ -148,8 +148,9 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 		MatchIndex: logLen,
 	}
 
-	// Wait on catchup for up to a minute.
-	if !req.Catchup && time.Since(r.catchingup) < time.Minute {
+	// Wait on catchup for up to a minute. Skip test if there was a leader
+	// change.
+	if req.LeaderID == r.leader && !req.Catchup && time.Since(r.catchingup) < time.Minute {
 		return res
 	}
 
@@ -200,7 +201,7 @@ func (r *Raft) HandleAppendEntriesRequest(req *pb.AppendEntriesRequest) *pb.Appe
 	// TODO Revisit heartbeat mechanism.
 	r.resetElection = true
 
-	if !success {
+	if !success && req.PrevLogIndex+1 > r.commitIndex {
 		r.catchingup = time.Now()
 		r.cureqout <- &catchUpReq{
 			leaderID: req.LeaderID,
