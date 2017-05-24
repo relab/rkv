@@ -36,7 +36,7 @@ func (r *Raft) handleOutgoing() error {
 
 		case req := <-r.cureqout:
 			// TODO Use config.
-			if time.Since(lastCuReq) < 5000*time.Millisecond {
+			if time.Since(lastCuReq) < 100*time.Millisecond {
 				continue
 			}
 			lastCuReq = time.Now()
@@ -130,7 +130,6 @@ func (r *Raft) handleOutgoing() error {
 						r.event.Record(raft.EventInjectEntries)
 						req.PrevLogIndex = index - 1
 						req.PrevLogTerm = r.logTerm(index - 1)
-						req.Catchup = true
 					}
 
 					need := maxIndex - req.PrevLogIndex
