@@ -161,7 +161,7 @@ func xThroughputYLatencyFunc(files []string) {
 	sort.Strings(experiments)
 
 	fmt.Printf(
-		"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\\n",
+		"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 		"name",
 		"throughput/s",
 		"throughput/s stdev",
