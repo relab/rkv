@@ -213,10 +213,10 @@ func xThroughputYLatencyFunc(files []string) {
 			time.Duration(meanlatency).Seconds()*1000,
 			time.Duration(stdevlatency).Seconds()*1000,
 			time.Duration(medianlatency).Seconds()*1000,
-			qs.Q1,
-			qs.Q3,
-			min,
-			max,
+			time.Duration(qs.Q1).Seconds()*1000,
+			time.Duration(qs.Q3).Seconds()*1000,
+			time.Duration(min).Seconds()*1000,
+			time.Duration(max).Seconds()*1000,
 		)
 
 		fmt.Fprintf(os.Stderr, aurora.Magenta("%s --> %03.0f%%\n").String(), strings.Repeat(" ", len(msg)-4), float64(i+1)/float64(len(experiments))*100)
