@@ -168,10 +168,10 @@ func xThroughputYLatencyFunc(files []string) {
 		"latency (average) ms",
 		"latency (average) ms stdev",
 		"latency (media) ms",
-		"Q1",
-		"Q3",
-		"Min",
-		"Max",
+		"q1",
+		"q3",
+		"min",
+		"max",
 	)
 
 	for i, experiment := range experiments {
