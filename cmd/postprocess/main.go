@@ -196,13 +196,21 @@ func xThroughputYLatencyFunc(files []string) {
 		stdevthroughput, _ := stats.StandardDeviation(allthroughput)
 		meanlatency, _ := stats.Mean(allatency)
 		stdevlatency, _ := stats.StandardDeviation(allatency)
+		medianlatency, _ := stats.Median(allatency)
+		qs, _ := stats.Quartile(allatency)
+		outliers, _ := stats.QuartileOutliers(allatency)
 		fmt.Printf(
-			"%s\t%f\t%f\t%f\t%f\n",
+			"%s\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%v\t%v\n",
 			experiment,
 			meanthroughput,
 			stdevthroughput,
 			time.Duration(meanlatency).Seconds()*1000,
 			time.Duration(stdevlatency).Seconds()*1000,
+			time.Duration(medianlatency).Seconds()*1000,
+			qs.Q1,
+			qs.Q3,
+			outliers.Mild,
+			outliers.Extreme,
 		)
 
 		fmt.Fprintf(os.Stderr, aurora.Magenta("%s --> %03.0f%%\n").String(), strings.Repeat(" ", len(msg)-4), float64(i+1)/float64(len(experiments))*100)
