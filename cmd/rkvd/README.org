@@ -6,35 +6,51 @@
 *** Usage
     #+BEGIN_EXAMPLE
     Usage of rkvd:
+      -backend string
+          Raft backend to use [gorums|etcd|hashicorp] (default "gorums")
       -batch
-          enable batching (default true)
+          Enable batching (default true)
+      -cache int
+          How many entries should be kept in memory (default 67108864)
+      -catchupmultiplier uint
+          How many more times entries per message allowed during catch up (default 1024)
+      -checkquorum
+          Require a quorum of responses to a heartbeat to retain leadership
       -cluster string
-          comma separated cluster servers (default ":9201")
+          comma separated list of server ids to form cluster with, [1 >= id <= len(servers)] (default "1,2,3")
       -election duration
-          How long servers wait before starting an election (default 2s)
+          How long servers wait before starting an election (default 1s)
+      -entriespermsg uint
+          Entries per Appendentries message (default 64)
       -heartbeat duration
-          How often a heartbeat should be sent (default 250ms)
+          How often a heartbeat should be sent (default 20ms)
       -id uint
           server ID
-      -maxappend uint
-          Max entries per AppendEntries message (default 5000)
+      -maxgrpc int
+          Max GRPC message size (default 134217728)
+      -ordergorums
+          Force ordering of per node RPCs with Gorums (default true)
       -quiet
           Silence log output
       -recover
           Recover from stable storage
+      -servermetrics
+          Enable server-side metrics (default true)
+      -servers string
+          comma separated list of server addresses (default ":9201,:9202,:9203,:9204,:9205,:9206,:9207")
     #+END_EXAMPLE
 
 *** Example
 **** Separate machines
       #+BEGIN_SRC shell
       # Computer with IP1.
-      rkvd -id 1 -cluster IP1:9200,IP2:9200,IP3:9200
+      rkvd -id 1 -servers IP1:9200,IP2:9200,IP3:9200 -cluster 1,2,3
 
       # Computer with IP2.
-      rkvd -id 2 -cluster IP1:9200,IP2:9200,IP3:9200
+      rkvd -id 2 -servers IP1:9200,IP2:9200,IP3:9200 -cluster 1,2,3
 
       # Computer with IP3.
-      rkvd -id 3 -cluster IP1:9200,IP2:9200,IP3:9200
+      rkvd -id 3 -servers IP1:9200,IP2:9200,IP3:9200 -cluster 1,2,3
 
       # Computer(s) with client(s).
       ## Do something, i.e, run rkvctl.
@@ -44,9 +60,9 @@
       You can omit the ip to listen on localhost.
 
       #+BEGIN_SRC shell
-      rkvd -id 1 -cluster :9201,:9202,:9203 &
-      rkvd -id 2 -cluster :9201,:9202,:9203 &
-      rkvd -id 3 -cluster :9201,:9202,:9203 &
+      rkvd -id 1 -servers :9201,:9202,:9203 -cluster 1,2,3 &
+      rkvd -id 2 -servers :9201,:9202,:9203 -cluster 1,2,3 &
+      rkvd -id 3 -servers :9201,:9202,:9203 -cluster 1,2,3 &
 
       ## Do something (preferably in another shell, unless you add -quiet), i.e, run rkvctl.
       ## Stop cluster when you are done.

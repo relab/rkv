@@ -1,13 +1,15 @@
 * Raft key-value store using Gorums/gRPC
 
-This repository contains two distributed key-value store servers using the [[https://raft.github.io/raft.pdf][Raft
-Consensus Algorithm]]. One backed by the [[https://github.com/relab/gorums][Gorums framework,]] the other by gRPC only.
+This repository contains a distributed key-value store using the [[https://raft.github.io/raft.pdf][Raft Consensus
+Algorithm]]. Three different Raft implementations are supported.
 
 ** Project layout
 
    - github.com/relab/rkv :: Common code.
+   - github.com/relab/rkv/scripts :: Ansible playbooks for experimental evaluation.
    - github.com/relab/rkv/cmd/rkvd :: Key-value store server.
    - github.com/relab/rkv/cmd/rkvctl :: key-value store client.
+   - github.com/relab/rkv/cmd/{getleaderid,postprocess,printboltdb} :: Various utility programs.
 
 ** Install
 

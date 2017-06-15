@@ -1,0 +1,50 @@
+* Raft Consensus with Gorums
+
+** rkvctl
+   =rkvctl= starts a client for the [[https://github.com/relab/rkv/tree/master/cmd/rkvd][rkvd]] key-value store server.
+
+*** Usage
+    #+BEGIN_EXAMPLE
+    Usage of rkvctl:
+      -add uint
+          server to attempt to add to cluster
+      -clients int
+          number of clients (default 1)
+      -cluster string
+          comma separated cluster servers (default ":9201,:9202,:9203")
+      -count uint
+          send [count] requests, overrides time and forever
+      -ensure
+          Keep trying until at least on command is successful
+      -forever
+          send requests forever (default true)
+      -keyspace uint
+          number of keys to touch (default 10000)
+      -payload int
+          payload in bytes (default 16)
+      -reads float
+          percentage of requests which should be reads
+      -remove uint
+          server to attempt to remove from cluster
+      -throughput int
+          send [throughput] requests per second per client (default 1)
+      -time duration
+          send requests for [time] duration, overrides forever
+      -zipfs float
+          zipf s parameter (default 1.1)
+      -zipfv float
+          zipf v parameter (default 4)
+    #+END_EXAMPLE
+
+*** Example
+**** Client write requests
+      #+BEGIN_SRC shell
+      # Start a rkvd cluster.
+      # Start 200 clients sending write requests at a rate of 25 write per second until 200000 request have been made.
+      rkvctl -cluster IP1:9200,IP2:9200,IP3:9200 -clients 200 -throughput 25 -count 200000
+      # Remove server IP2:9200.
+      rkvctl -cluster IP1:9200,IP2:9200,IP3:9200 -remove 2
+      #+END_SRC
+
+*** Starting a cluster:
+- [[https://github.com/relab/rkv/tree/master/cmd/rkvd][rkvd]]
