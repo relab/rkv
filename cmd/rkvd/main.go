@@ -27,10 +27,10 @@ import (
 	hashic "github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 	"github.com/relab/raft"
-	etcd "github.com/relab/raft/etcd"
-	hraft "github.com/relab/raft/hashicorp"
 	"github.com/relab/raft/raftgorums"
 	gorums "github.com/relab/raft/raftgorums/gorumspb"
+	etcd "github.com/relab/rkv/cmd/rkvd/raftimpl/etcd"
+	hraft "github.com/relab/rkv/cmd/rkvd/raftimpl/hashicorp"
 	"github.com/relab/rkv/rkvpb"
 
 	"google.golang.org/grpc"
