@@ -13,8 +13,10 @@
       when: raftID != 5
 
     - name: Start servers
-      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -heartbeat 2ms -election 200ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
+      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -ordergorums="{{order}}" -heartbeat 2ms -election 200ms -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1
       when: raftID != 5
+      async: 180
+      poll: 0
 
     - name: Sleep
       shell: sleep 2s
@@ -96,7 +98,7 @@
       retries: 999
 
     - name: Move data
-      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_0_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_0_{{order}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
 
 - name: Cleanup servers
   hosts: raft-servers
@@ -110,9 +112,9 @@
       when: raftID != 5
 
     - name: Move latency data
-      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_{{raftID}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/latency*.csv /media/ephemeral0/save/latency_{{raftID}}_{{order}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
       when: raftID != 5
 
     - name: Move event data
-      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/event*.csv /media/ephemeral0/save/event_{{raftID}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
+      shell: /bin/sh -c 'mv /media/ephemeral0/tmp/event*.csv /media/ephemeral0/save/event_{{raftID}}_{{order}}_{{backend}}_m{{maxentries}}_c{{clients}}_t{{throughput}}_{{time}}_{{output}}.csv'
       when: raftID != 5

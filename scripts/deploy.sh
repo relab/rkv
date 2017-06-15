@@ -1,3 +1,3 @@
 #!/bin/bash
 
-ansible-playbook deploy.yml -v
+ansible-playbook deploy.yml -v -f 10

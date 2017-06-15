@@ -12,13 +12,10 @@
     - name: Remove old server data
       shell: /bin/sh -c 'rm -rf /media/ephemeral0/tmp/*'
 
-    - name: Start first
-      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -ordergorums="{{order}}" -heartbeat 2ms -election 100ms -checkquorum -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
-      when: raftID != groups['raft-servers']|length
-
-    - name: Start last server
-      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -ordergorums="{{order}}" -heartbeat 2ms -checkquorum -election 2s -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1 &
-      when: raftID == groups['raft-servers']|length
+    - name: Start servers
+      shell: cd /media/ephemeral0/tmp/; GOGC=off nohup rkvd -ordergorums="{{order}}" -heartbeat 2ms -election "{{elt}}" -checkquorum -id "{{raftID}}" -servers "{{servers}}" -cluster "{{cluster}}" -backend "{{backend}}" -entriespermsg "{{maxentries}}" -quiet </dev/null >/dev/null 2>&1
+      async: 180
+      poll: 0
 
     - name: Sleep
       shell: sleep 2s
@@ -26,7 +23,7 @@
     - name: Partition follower for 5s after 35s
       become: true
       shell: sleep 35; iptables -F; iptables -A INPUT -p tcp ! -s 152.94.0.0/16 --match multiport ! --dports 22 -m statistic --mode random --probability 1.0 -j DROP; sleep 5; iptables -F
-      async: 40
+      async: 180
       poll: 0
       when: raftID == groups['raft-servers']|length
 
@@ -47,7 +44,7 @@
       shell: /bin/sh -c 'rm -rf /media/ephemeral0/tmp/*'
 
     - name: Throughput
-      shell: cd /media/ephemeral0/tmp/; GOGC=off rkvctl -cluster "{{servers}}" -throughput "{{throughput|int}}" -clients "{{clients}}" -time "{{time}}" -payload "{{payload}}"
+      shell: cd /media/ephemeral0/tmp/; GOGC=off rkvctl -cluster "{{servers}}" -throughput "{{throughput|int}}" -clients "{{clients}}" -time "{{time}}" -payload "{{payload}}" </dev/null >/dev/null 2>&1
       async: 120
       poll: 5
 
