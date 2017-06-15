@@ -3,14 +3,12 @@
 package eureka
 
 import (
-	"io"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/hudl/fargo"
 
-	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
 )
 
@@ -46,30 +44,34 @@ func TestIntegration(t *testing.T) {
 	registrar1.Register()
 	defer registrar1.Deregister()
 
-	// This should be enough time for the Eureka server response cache to update.
-	time.Sleep(time.Second)
-
-	// Build a Eureka subscriber.
-	factory := func(instance string) (endpoint.Endpoint, io.Closer, error) {
-		t.Logf("factory invoked for %q", instance)
-		return endpoint.Nop, nil, nil
-	}
-	s := NewSubscriber(
+	// Build a Eureka instancer.
+	instancer := NewInstancer(
 		&fargoConnection,
 		appNameTest,
-		factory,
-		log.With(logger, "component", "subscriber"),
+		log.With(logger, "component", "instancer"),
 	)
-	defer s.Stop()
+	defer instancer.Stop()
 
-	// We should have one endpoint immediately after subscriber instantiation.
-	endpoints, err := s.Endpoints()
-	if err != nil {
-		t.Error(err)
+	// checks every 100ms (fr up to 10s) for the expected number of instances to be reported
+	waitForInstances := func(count int) {
+		for t := 0; t < 100; t++ {
+			state := instancer.state()
+			if len(state.Instances) == count {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		state := instancer.state()
+		if state.Err != nil {
+			t.Error(state.Err)
+		}
+		if want, have := 1, len(state.Instances); want != have {
+			t.Errorf("want %d, have %d", want, have)
+		}
 	}
-	if want, have := 1, len(endpoints); want != have {
-		t.Errorf("want %d, have %d", want, have)
-	}
+
+	// We should have one instance immediately after subscriber instantiation.
+	waitForInstances(1)
 
 	// Register a second instance
 	registrar2 := NewRegistrar(&fargoConnection, instanceTest2, log.With(logger, "component", "registrar2"))
@@ -78,29 +80,12 @@ func TestIntegration(t *testing.T) {
 
 	// This should be enough time for a scheduled update assuming Eureka is
 	// configured with the properties mentioned in the function comments.
-	time.Sleep(2 * time.Second)
-
-	// Now we should have two endpoints.
-	endpoints, err = s.Endpoints()
-	if err != nil {
-		t.Error(err)
-	}
-	if want, have := 2, len(endpoints); want != have {
-		t.Errorf("want %d, have %d", want, have)
-	}
+	waitForInstances(2)
 
 	// Deregister the second instance.
 	registrar2.Deregister()
 
 	// Wait for another scheduled update.
-	time.Sleep(2 * time.Second)
-
 	// And then there was one.
-	endpoints, err = s.Endpoints()
-	if err != nil {
-		t.Error(err)
-	}
-	if want, have := 1, len(endpoints); want != have {
-		t.Errorf("want %d, have %d", want, have)
-	}
+	waitForInstances(1)
 }
